@@ -417,7 +417,6 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     );
 
     assert_eq!(recursive_circuit_setup.num_inputs, 1);
-
     assert_eq!(recursive_circuit_vk.total_lookup_entries_length, 0);
 
     let mut g2_bases = [<<Bn256 as Engine>::G2Affine as CurveAffine>::zero(); 2];

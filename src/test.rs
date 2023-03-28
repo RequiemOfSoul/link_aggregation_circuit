@@ -18,6 +18,7 @@ use franklin_crypto::bellman::plonk::better_cs::verifier::verify_and_aggregate;
 use franklin_crypto::bellman::plonk::commitments::transcript::*;
 use franklin_crypto::bellman::plonk::commitments::transcript::Transcript;
 use franklin_crypto::bellman::plonk::fft::cooley_tukey_ntt::*;
+use franklin_crypto::bellman::PrimeField;
 use franklin_crypto::bellman::worker::*;
 use franklin_crypto::plonk::circuit::*;
 use franklin_crypto::plonk::circuit::bigint::field::*;
@@ -528,21 +529,27 @@ fn simulate_many_proofs() {
 }
 
 #[test]
-fn test_all_aggreagted_proofs() {
-    let a = Fr::one();
-    let b = Fr::one();
+fn test_all_aggregated_proofs() {
+    const TREE_DEPTH: usize = 3;
+    const VK_LEAF_NUM: usize = 2usize.pow((TREE_DEPTH - 1) as u32);
 
     let mut circuits = vec![];
-    for num_steps in vec![18, 40].into_iter() {
-        let circuit = BenchmarkCircuitWithOneInput::<Bn256> {
-            num_steps,
-            a,
-            b,
-            output: fibbonacci(&a, &b, num_steps),
-            _engine_marker: std::marker::PhantomData,
-        };
+    let vks_steps = (1..=VK_LEAF_NUM).collect::<Vec<_>>();
+    let diff_input_b = [1,2,3,4,5,6,7,8,9];
+    for &num_steps in &vks_steps {
+        for i in diff_input_b {
+            let a = Fr::from_str(&i.to_string()).unwrap();
+            let b = Fr::one();
+            let circuit = BenchmarkCircuitWithOneInput::<Bn256> {
+                num_steps,
+                a,
+                b,
+                output: fibbonacci(&a, &b, num_steps),
+                _engine_marker: std::marker::PhantomData,
+            };
 
-        circuits.push(circuit);
+            circuits.push(circuit);
+        }
     }
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
@@ -575,8 +582,6 @@ fn test_all_aggreagted_proofs() {
     }
 
     let num_inputs = 1;
-    let tree_depth = 2;
-
     let num_proofs_to_checks = vec![1, 4, 8, 18, 36];
     let crs_degrees = vec![22, 23, 24, 25, 26];
 
@@ -587,16 +592,18 @@ fn test_all_aggreagted_proofs() {
             aggregated_proofs_num, crs_degree
         );
         let crs = open_crs_for_log2_of_size(crs_degree);
-        let (vk_for_recursive_circut, setup) = create_recursive_circuit_vk_and_setup(
+        let (vk_for_recursive_circuit, setup) = create_recursive_circuit_vk_and_setup(
             aggregated_proofs_num,
             num_inputs,
-            tree_depth,
+            TREE_DEPTH,
             &crs,
         )
         .expect("must create recursive circuit verification key");
 
-        let aggregated_proofs_indexes = vec![1; aggregated_proofs_num];
-        let aggregated_proofs = vec![proofs[1].clone(); aggregated_proofs_num];
+        let aggregated_proofs_indexes = (0..aggregated_proofs_num)
+            .map(|i| vks_steps[i/diff_input_b.len()])
+            .collect::<Vec<_>>();
+        let aggregated_proofs = &proofs[0..aggregated_proofs_num];
 
         let worker = Worker::new();
         println!(
@@ -604,12 +611,12 @@ fn test_all_aggreagted_proofs() {
             aggregated_proofs_num, crs_degree
         );
         let _ = proof_recursive_aggregate_for_zklink(
-            tree_depth,
+            TREE_DEPTH,
             num_inputs,
             &vks,
-            &aggregated_proofs,
+            aggregated_proofs,
             &aggregated_proofs_indexes,
-            &vk_for_recursive_circut,
+            &vk_for_recursive_circuit,
             &setup,
             &crs,
             true,
