@@ -562,7 +562,7 @@ fn test_all_aggregated_proofs() {
     let mut vks = vec![];
     let mut proofs = vec![];
 
-    for circuit in circuits.into_iter() {
+    for (index, circuit) in circuits.into_iter().enumerate() {
         let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRNS<Bn256>>(
             circuit,
             transcript_params,
@@ -577,7 +577,7 @@ fn test_all_aggregated_proofs() {
         .expect("must verify");
         assert!(valid);
 
-        vks.push(vk);
+        if index % diff_input_b.len() == 0 { vks.push(vk) };
         proofs.push(proof);
     }
 
