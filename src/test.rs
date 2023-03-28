@@ -601,7 +601,7 @@ fn test_all_aggregated_proofs() {
         .expect("must create recursive circuit verification key");
 
         let aggregated_proofs_indexes = (0..aggregated_proofs_num)
-            .map(|i| vks_steps[i/diff_input_b.len()])
+            .map(|i| i/diff_input_b.len())
             .collect::<Vec<_>>();
         let aggregated_proofs = &proofs[0..aggregated_proofs_num];
 
