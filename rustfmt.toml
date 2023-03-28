@@ -1,0 +1,4 @@
+# .rustfmt.toml
+[imports]
+group_imports = true
+remove_unused = true
