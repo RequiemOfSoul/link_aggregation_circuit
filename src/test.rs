@@ -233,7 +233,7 @@ fn open_crs_for_log2_of_size(n: usize) -> Crs<Bn256, CrsForMonomialForm> {
     let full_path = base_path.join(&format!("setup_2^{}.key", n));
     println!("Opening {}", full_path.to_string_lossy());
     let file = std::fs::File::open(full_path).unwrap();
-    let reader = std::io::BufReader::with_capacity(1 << 24, file);
+    let reader = std::io::BufReader::with_capacity(1 << n, file);
 
     let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
 
