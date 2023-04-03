@@ -197,8 +197,8 @@ where
                 cs,
                 self.transcript_params,
                 &proof.input_values,
-                &vk,
-                &proof,
+                vk,
+                proof,
                 &self.aux_data,
                 self.rns_params,
             )?;
@@ -210,12 +210,12 @@ where
         // now make scalars for separation
 
         let mut scalars = vec![];
-        scalars.push(aggregation_challenge.clone());
+        scalars.push(aggregation_challenge);
 
-        let mut current = aggregation_challenge.clone();
+        let mut current = aggregation_challenge;
         for _ in 1..self.num_proofs_to_check {
             let new = current.mul(cs, &aggregation_challenge)?;
-            scalars.push(new.clone());
+            scalars.push(new);
 
             current = new;
         }
@@ -239,22 +239,19 @@ where
             &self.aux_data,
         )?;
 
-        match (
+        if let (Some(with_gen), Some(with_x), Some(g2_elements)) = (
             pair_with_generator.get_point().get_value(),
             pair_with_x.get_point().get_value(),
             self.g2_elements,
-        ) {
-            (Some(with_gen), Some(with_x), Some(g2_elements)) => {
-                let valid = E::final_exponentiation(&E::miller_loop(&[
-                    (&with_gen.prepare(), &g2_elements[0].prepare()),
-                    (&with_x.prepare(), &g2_elements[1].prepare()),
-                ]))
-                .unwrap()
-                    == E::Fqk::one();
+        ){
+            let valid = E::final_exponentiation(&E::miller_loop(&[
+                (&with_gen.prepare(), &g2_elements[0].prepare()),
+                (&with_x.prepare(), &g2_elements[1].prepare()),
+            ]))
+            .unwrap()
+                == E::Fqk::one();
 
-                dbg!(valid);
-            }
-            _ => {}
+            dbg!(valid);
         }
 
         // allocate vk ids
@@ -290,7 +287,7 @@ where
 
                 let leaf_hash = rescue_leaf_hash(cs, vk_witness, self.rescue_params)?;
 
-                let mut current = leaf_hash.clone();
+                let mut current = leaf_hash;
 
                 for (path_bit, auth_path) in path_bits.into_iter().zip(auth_path.into_iter()) {
                     let left =
@@ -313,8 +310,8 @@ where
         hash_to_public_inputs.extend(allocated_num_to_alligned_big_endian(cs, &vk_root)?);
 
         // first aggregate proof ids into u8
-        for proof_idx in 0..self.num_proofs_to_check {
-            let mut le_bits = key_ids[proof_idx].to_vec();
+        for le_bits in key_ids.iter().take(self.num_proofs_to_check) {
+            let mut le_bits = le_bits.to_vec();
             assert!(le_bits.len() < 8);
             le_bits.resize(8, Boolean::constant(false));
 
@@ -324,8 +321,7 @@ where
         }
 
         // now aggregate original public inputs
-        for proof_idx in 0..self.num_proofs_to_check {
-            let allocated_proof = &proof_witnesses[proof_idx];
+        for allocated_proof in proof_witnesses.iter().take(self.num_proofs_to_check) {
             for input_idx in 0..self.num_inputs {
                 let input = &allocated_proof.input_values[input_idx];
                 let serialized = allocated_num_to_alligned_big_endian(cs, input)?;
@@ -436,7 +432,7 @@ where
     <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox0: PlonkCsSBox<E>,
     <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox1: PlonkCsSBox<E>,
 {
-    let mut rescue_gadget = StatefulRescueGadget::<E>::new(&params);
+    let mut rescue_gadget = StatefulRescueGadget::<E>::new(params);
 
     rescue_gadget.specizalize(leaf.len() as u8);
     rescue_gadget.absorb(cs, leaf, params)?;
@@ -458,7 +454,7 @@ where
     <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox0: PlonkCsSBox<E>,
     <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox1: PlonkCsSBox<E>,
 {
-    let mut rescue_gadget = StatefulRescueGadget::<E>::new(&params);
+    let mut rescue_gadget = StatefulRescueGadget::<E>::new(params);
 
     rescue_gadget.specizalize(2);
     rescue_gadget.absorb(cs, &[left, right], params)?;

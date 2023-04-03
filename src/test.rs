@@ -89,8 +89,7 @@ fn test_two_proofs() {
     let proof_ids = vec![1, 0];
 
     let mut queries = vec![];
-    for idx in 0..2 {
-        let proof_id = proof_ids[idx];
+    for &proof_id in proof_ids.iter().take(2) {
         let vk = &vks_in_tree[proof_id];
 
         let leaf_values = vk
@@ -159,7 +158,7 @@ fn test_two_proofs() {
     assert_eq!(cs.num_inputs, 1);
 }
 
-fn make_vk_and_proof<'a, E: Engine, T: Transcript<E::Fr>>(
+fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(
     circuit: BenchmarkCircuit<E>,
     transcript_params: <T as Prng<E::Fr>>::InitializationParameters,
 ) -> (
@@ -169,7 +168,7 @@ fn make_vk_and_proof<'a, E: Engine, T: Transcript<E::Fr>>(
     let worker = Worker::new();
     let mut assembly = OldActualAssembly::<E>::new();
     circuit
-        .clone()
+        
         .synthesize(&mut assembly)
         .expect("should synthesize");
     assembly.finalize();
@@ -230,14 +229,14 @@ fn make_vk_and_proof<'a, E: Engine, T: Transcript<E::Fr>>(
 fn open_crs_for_log2_of_size(n: usize) -> Crs<Bn256, CrsForMonomialForm> {
     let base_path_str = std::env::var("RUNTIME_CONFIG_KEY_DIR").unwrap();
     let base_path = std::path::Path::new(&base_path_str);
-    let full_path = base_path.join(&format!("setup_2^{}.key", n));
+    let full_path = base_path.join(format!("setup_2^{}.key", n));
     println!("Opening {}", full_path.to_string_lossy());
     let file = std::fs::File::open(full_path).unwrap();
     let reader = std::io::BufReader::with_capacity(1 << n, file);
 
-    let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
+    
 
-    crs
+    Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap()
 }
 
 #[test]
@@ -253,7 +252,7 @@ fn create_vk() {
     dbg!(vk);
 }
 
-fn make_vk_and_proof_for_crs<'a, E: Engine, T: Transcript<E::Fr>>(
+fn make_vk_and_proof_for_crs<E: Engine, T: Transcript<E::Fr>>(
     circuit: BenchmarkCircuitWithOneInput<E>,
     transcript_params: <T as Prng<E::Fr>>::InitializationParameters,
     crs: &Crs<E, CrsForMonomialForm>,
@@ -270,7 +269,7 @@ fn make_vk_and_proof_for_crs<'a, E: Engine, T: Transcript<E::Fr>>(
     let setup = assembly.setup(&worker).expect("should setup");
 
     let verification_key =
-        VerificationKey::from_setup(&setup, &worker, &crs).expect("should create vk");
+        VerificationKey::from_setup(&setup, &worker, crs).expect("should create vk");
 
     let proof = franklin_crypto::bellman::plonk::prove_native_by_steps::<E, _, T>(
         &circuit,

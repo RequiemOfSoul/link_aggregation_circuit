@@ -16,7 +16,7 @@ use once_cell::sync::Lazy;
 pub static RNS_PARAMETERS: Lazy<RnsParameters<Bn256, <Bn256 as Engine>::Fq>> =
     Lazy::new(|| RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4));
 pub static RESCUE_PARAMETERS: Lazy<Bn256RescueParams> =
-    Lazy::new(|| Bn256RescueParams::new_checked_2_into_1());
+    Lazy::new(Bn256RescueParams::new_checked_2_into_1);
 
 pub struct StaticRescueBinaryTreeHasher<E: RescueEngine> {
     params: E::Params,
@@ -101,20 +101,14 @@ pub fn make_vks_tree<'a, E: RescueEngine, P: OldCSParams<E>>(
     (tree, all_values)
 }
 
+type VksTreeAndWitness = BinaryTree<Bn256, StaticRescueBinaryTreeHasher<Bn256>>;
+type VksWitness = Vec<<Bn256 as ScalarEngine>::Fr>;
+
 pub fn create_vks_tree(
     vks: &[VerificationKey<Bn256, OldActualParams>],
     tree_depth: usize,
-) -> Result<
-    (
-        usize,
-        (
-            BinaryTree<Bn256, StaticRescueBinaryTreeHasher<Bn256>>,
-            Vec<<Bn256 as ScalarEngine>::Fr>,
-        ),
-    ),
-    SynthesisError,
-> {
-    assert!(vks.len() > 0);
+) -> Result<(usize, (VksTreeAndWitness,VksWitness)), SynthesisError> {
+    assert!(!vks.is_empty());
     let max_size = 1 << tree_depth;
     assert!(vks.len() <= max_size);
 

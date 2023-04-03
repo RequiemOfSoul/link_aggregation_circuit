@@ -66,8 +66,8 @@ pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
 
     for (vk, proof) in vks.iter().zip(proofs.iter()) {
         let (is_valid, [for_gen, for_x]) = verify_and_aggregate::<_, _, RescueTranscriptForRNS<E>>(
-            &proof,
-            &vk,
+            proof,
+            vk,
             Some((params, rns_params)),
         )
         .expect("should verify");
@@ -117,12 +117,12 @@ pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
     let result = hasher.finalize();
 
     (&mut hash_output[..])
-        .write(&result.as_slice())
+        .write_all(&result)
         .expect("must write");
 
     let keep = bytes_to_keep::<E>();
-    for idx in 0..(32 - keep) {
-        hash_output[idx] = 0;
+    for output in hash_output.iter_mut().take(32 - keep) {
+        *output = 0;
     }
 
     let mut repr = <E::Fr as PrimeField>::Repr::default();
@@ -198,7 +198,7 @@ fn decompose_point_into_limbs<E: Engine>(
 
     let params = &new_params;
 
-    utils::add_point(src, dst, &params);
+    utils::add_point(src, dst, params);
 }
 
 pub fn create_recursive_circuit_setup<'a>(
@@ -244,26 +244,20 @@ pub fn create_recursive_circuit_setup<'a>(
 
     Ok(setup)
 }
-
+type NewVKAndSetUp<'a> = (NewVerificationKey<Bn256, RecursiveAggregationCircuitBn256<'a>>, NewSetup<Bn256, RecursiveAggregationCircuitBn256<'a>>);
 pub fn create_recursive_circuit_vk_and_setup<'a>(
     num_proofs_to_check: usize,
     num_inputs: usize,
     vk_tree_depth: usize,
     crs: &Crs<Bn256, CrsForMonomialForm>,
-) -> Result<
-    (
-        NewVerificationKey<Bn256, RecursiveAggregationCircuitBn256<'a>>,
-        NewSetup<Bn256, RecursiveAggregationCircuitBn256<'a>>,
-    ),
-    SynthesisError,
-> {
+) -> Result<NewVKAndSetUp<'a>, SynthesisError> {
     use franklin_crypto::bellman::worker::*;
     let worker = Worker::new();
 
     let setup = create_recursive_circuit_setup(num_proofs_to_check, num_inputs, vk_tree_depth)?;
 
     let vk = NewVerificationKey::<Bn256, RecursiveAggregationCircuitBn256<'a>>::from_setup(
-        &setup, &worker, &crs,
+        &setup, &worker, crs,
     )?;
 
     Ok((vk, setup))
@@ -292,7 +286,7 @@ pub fn create_zklink_recursive_aggregate(
     let rescue_params = &*RESCUE_PARAMETERS;
 
     assert!(tree_depth <= 8, "tree must not be deeper than 8");
-    let (max_index, (vks_tree, _)) = create_vks_tree(&all_known_vks, tree_depth)?;
+    let (max_index, (vks_tree, _)) = create_vks_tree(all_known_vks, tree_depth)?;
 
     let mut vks_to_aggregate = vec![];
     let mut short_indexes = vec![];
@@ -312,7 +306,7 @@ pub fn create_zklink_recursive_aggregate(
         individual_proofs_inputs.push(proof.input_values.clone());
     }
 
-    let aggregate = make_aggregate(&proofs, &vks_to_aggregate, &rescue_params, &rns_params)?;
+    let aggregate = make_aggregate(proofs, &vks_to_aggregate, rescue_params, rns_params)?;
 
     let valid = Bn256::final_exponentiation(&Bn256::miller_loop(&[
         (&aggregate[0].prepare(), &g2_elements[0].prepare()),
@@ -321,7 +315,7 @@ pub fn create_zklink_recursive_aggregate(
     .ok_or(SynthesisError::Unsatisfiable)?
         == <Bn256 as Engine>::Fqk::one();
 
-    if valid == false {
+    if !valid {
         println!("Recursive aggreagete is invalid");
         return Err(SynthesisError::Unsatisfiable);
     }
@@ -330,10 +324,10 @@ pub fn create_zklink_recursive_aggregate(
 
     let (expected_input, limbed_aggreagate) = make_public_input_and_limbed_aggregate(
         vks_tree_root,
-        &vk_indexes,
-        &proofs,
+        vk_indexes,
+        proofs,
         &aggregate,
-        &rns_params,
+        rns_params,
     );
 
     let new = RecursiveAggreagationDataStorage::<Bn256> {
@@ -349,6 +343,7 @@ pub fn create_zklink_recursive_aggregate(
 }
 
 /// Internally uses RollingKeccakTranscript for Ethereum
+#[allow(clippy::too_many_arguments)]
 pub fn proof_recursive_aggregate_for_zklink<'a>(
     tree_depth: usize,
     num_inputs: usize,
@@ -367,7 +362,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     let num_proofs_to_check = proofs.len();
 
     assert!(tree_depth <= 8, "tree must not be deeper than 8");
-    let (max_index, (vks_tree, tree_witnesses)) = create_vks_tree(&all_known_vks, tree_depth)?;
+    let (max_index, (vks_tree, tree_witnesses)) = create_vks_tree(all_known_vks, tree_depth)?;
 
     let mut queries = vec![];
 
@@ -384,7 +379,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         vks_to_aggregate.push(vk.clone());
 
         let leaf_values = vk
-            .into_witness_for_params(&rns_params)
+            .into_witness_for_params(rns_params)
             .expect("must transform into limbed witness");
 
         let values_per_leaf = leaf_values.len();
@@ -398,10 +393,10 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     }
 
     let aggregate = make_aggregate(
-        &proofs_to_aggregate,
+        proofs_to_aggregate,
         &vks_to_aggregate,
-        &rescue_params,
-        &rns_params,
+        rescue_params,
+        rns_params,
     )?;
 
     let vks_tree_root = vks_tree.get_commitment();
@@ -410,10 +405,10 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
     let (expected_input, _) = make_public_input_and_limbed_aggregate(
         vks_tree_root,
-        &vk_indexes,
-        &proofs,
+        vk_indexes,
+        proofs,
         &aggregate,
-        &rns_params,
+        rns_params,
     );
 
     assert_eq!(recursive_circuit_setup.num_inputs, 1);
@@ -433,10 +428,10 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         vk_auth_paths: Some(queries),
         proof_ids: Some(vk_indexes.to_vec()),
         proofs: Some(proofs_to_aggregate.to_vec()),
-        rescue_params: &rescue_params,
-        rns_params: &rns_params,
+        rescue_params,
+        rns_params,
         aux_data,
-        transcript_params: &rescue_params,
+        transcript_params: rescue_params,
 
         g2_elements: Some(g2_bases),
 
@@ -458,7 +453,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         let is_satisfied = assembly.is_satisfied();
         println!("Is satisfied = {}", is_satisfied);
 
-        if is_satisfied == false {
+        if !is_satisfied {
             return Err(SynthesisError::Unsatisfiable);
         }
     }
@@ -474,9 +469,9 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
     let timer = std::time::Instant::now();
     let proof = assembly.create_proof::<_, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
-        &worker,
-        &recursive_circuit_setup,
-        &crs,
+        worker,
+        recursive_circuit_setup,
+        crs,
         None,
     )?;
     println!(
@@ -493,12 +488,12 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 
     let is_valid = verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
-        &recursive_circuit_vk,
+        recursive_circuit_vk,
         &proof,
         None,
     )?;
 
-    if is_valid == false {
+    if !is_valid {
         println!("Recursive circuit proof is invalid");
         return Err(SynthesisError::Unsatisfiable);
     }
