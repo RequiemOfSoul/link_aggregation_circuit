@@ -10,4 +10,4 @@ edition = "2021"
 sha2 = "0.10.2"
 hex = "*"
 once_cell = "*"
-franklin-crypto = {git = "https://github.com/zk-liangliang/franklin-crypto", branch = "beta", features = ["multicore", "plonk"]}
+franklin-crypto = { git = "https://github.com/zkLinkProtocol/franklin-crypto.git", branch = "beta", features = ["multicore", "plonk"]}
