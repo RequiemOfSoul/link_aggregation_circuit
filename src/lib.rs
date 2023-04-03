@@ -1,8 +1,8 @@
 #![allow(dead_code)]
-mod circuit;
+pub mod circuit;
+pub mod vks_tree;
+pub mod witness;
 mod utils;
-mod vks_tree;
-mod witness;
 
 #[cfg(test)]
 mod test;
