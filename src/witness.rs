@@ -244,7 +244,10 @@ pub fn create_recursive_circuit_setup<'a>(
 
     Ok(setup)
 }
-type NewVKAndSetUp<'a> = (NewVerificationKey<Bn256, RecursiveAggregationCircuitBn256<'a>>, NewSetup<Bn256, RecursiveAggregationCircuitBn256<'a>>);
+type NewVKAndSetUp<'a> = (
+    NewVerificationKey<Bn256, RecursiveAggregationCircuitBn256<'a>>,
+    NewSetup<Bn256, RecursiveAggregationCircuitBn256<'a>>,
+);
 pub fn create_recursive_circuit_vk_and_setup<'a>(
     num_proofs_to_check: usize,
     num_inputs: usize,

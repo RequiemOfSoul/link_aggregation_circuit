@@ -3,11 +3,13 @@ name = "recursive_aggregation_circuit"
 version = "0.1.0"
 authors = ["N Labs Team<nevermore@zklink.org>"]
 edition = "2021"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sha2 = "0.10.2"
+franklin-crypto = { git = "https://github.com/zkLinkProtocol/franklin-crypto.git", branch = "beta", features = [
+  "multicore",
+  "plonk",
+] }
 hex = "*"
 once_cell = "*"
-franklin-crypto = { git = "https://github.com/zkLinkProtocol/franklin-crypto.git", branch = "beta", features = ["multicore", "plonk"]}
+sha2 = "0.10.2"

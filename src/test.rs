@@ -168,7 +168,6 @@ fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(
     let worker = Worker::new();
     let mut assembly = OldActualAssembly::<E>::new();
     circuit
-        
         .synthesize(&mut assembly)
         .expect("should synthesize");
     assembly.finalize();
@@ -233,8 +232,6 @@ fn open_crs_for_log2_of_size(n: usize) -> Crs<Bn256, CrsForMonomialForm> {
     println!("Opening {}", full_path.to_string_lossy());
     let file = std::fs::File::open(full_path).unwrap();
     let reader = std::io::BufReader::with_capacity(1 << n, file);
-
-    
 
     Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap()
 }
@@ -534,7 +531,7 @@ fn test_all_aggregated_proofs() {
 
     let mut circuits = vec![];
     let vks_steps = (1..=VK_LEAF_NUM).collect::<Vec<_>>();
-    let diff_input_b = [1,2,3,4,5,6,7,8,9];
+    let diff_input_b = [1, 2, 3, 4, 5, 6, 7, 8, 9];
     for &num_steps in &vks_steps {
         for i in diff_input_b {
             let a = Fr::from_str(&i.to_string()).unwrap();
@@ -576,7 +573,9 @@ fn test_all_aggregated_proofs() {
         .expect("must verify");
         assert!(valid);
 
-        if index % diff_input_b.len() == 0 { vks.push(vk) };
+        if index % diff_input_b.len() == 0 {
+            vks.push(vk)
+        };
         proofs.push(proof);
     }
 
@@ -600,7 +599,7 @@ fn test_all_aggregated_proofs() {
         .expect("must create recursive circuit verification key");
 
         let aggregated_proofs_indexes = (0..aggregated_proofs_num)
-            .map(|i| i/diff_input_b.len())
+            .map(|i| i / diff_input_b.len())
             .collect::<Vec<_>>();
         let aggregated_proofs = &proofs[0..aggregated_proofs_num];
 

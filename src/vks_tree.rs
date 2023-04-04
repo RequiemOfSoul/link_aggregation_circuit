@@ -107,7 +107,7 @@ type VksWitness = Vec<<Bn256 as ScalarEngine>::Fr>;
 pub fn create_vks_tree(
     vks: &[VerificationKey<Bn256, OldActualParams>],
     tree_depth: usize,
-) -> Result<(usize, (VksTreeAndWitness,VksWitness)), SynthesisError> {
+) -> Result<(usize, (VksTreeAndWitness, VksWitness)), SynthesisError> {
     assert!(!vks.is_empty());
     let max_size = 1 << tree_depth;
     assert!(vks.len() <= max_size);

@@ -243,7 +243,7 @@ where
             pair_with_generator.get_point().get_value(),
             pair_with_x.get_point().get_value(),
             self.g2_elements,
-        ){
+        ) {
             let valid = E::final_exponentiation(&E::miller_loop(&[
                 (&with_gen.prepare(), &g2_elements[0].prepare()),
                 (&with_x.prepare(), &g2_elements[1].prepare()),
