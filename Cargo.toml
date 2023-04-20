@@ -6,9 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-franklin-crypto = { git = "https://github.com/zkLinkProtocol/franklin-crypto.git", branch = "beta", features = [
+franklin-crypto = { git = "https://github.com/zkLinkProtocol/franklin-crypto.git", branch = "gpu_beta", features = [
   "multicore",
   "plonk",
+  "gpu"
 ] }
 hex = "*"
 once_cell = "*"
