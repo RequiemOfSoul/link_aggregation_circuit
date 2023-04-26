@@ -226,14 +226,16 @@ fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(
 }
 
 fn open_crs_for_log2_of_size(n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-    let base_path_str = std::env::var("RUNTIME_CONFIG_KEY_DIR").unwrap();
+    let base_path_str = std::env::var("RUNTIME_CONFIG_KEY_DIR").expect("please set RUNTIME_CONFIG_KEY_DIR env var to get crs");
     let base_path = std::path::Path::new(&base_path_str);
     let full_path = base_path.join(format!("setup_2^{}.key", n));
     println!("Opening {}", full_path.to_string_lossy());
+    let timer = std::time::Instant::now();
     let file = std::fs::File::open(full_path).unwrap();
     let reader = std::io::BufReader::with_capacity(1 << n, file);
-
-    Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap()
+    let crs = Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap();
+    println!("Load crs into memory from setup_2^{}.key file spend {}s", n, timer.elapsed().as_secs());
+    crs
 }
 
 #[test]
@@ -321,11 +323,11 @@ fn simulate_zklink_proofs() {
             &crs,
         );
 
-        let valid = franklin_crypto::bellman::plonk::better_cs::verifier::verify::<
-            _,
-            _,
-            RescueTranscriptForRNS<Bn256>,
-        >(&proof, &vk, Some(transcript_params))
+        let valid = better_cs::verifier::verify::<_, _, RescueTranscriptForRNS<Bn256>, >(
+            &proof,
+            &vk,
+            Some(transcript_params)
+        )
         .expect("must verify");
         assert!(valid);
 
@@ -622,4 +624,102 @@ fn test_all_aggregated_proofs() {
         )
         .expect("must check if satisfied and make a proof");
     }
+}
+
+#[test]
+fn test_max_aggregated_proofs_parallel() {
+    const TREE_DEPTH: usize = 3;
+    const VK_LEAF_NUM: usize = 2usize.pow((TREE_DEPTH - 1) as u32);
+
+    let mut circuits = vec![];
+    let vks_steps = (1..=VK_LEAF_NUM).collect::<Vec<_>>();
+    let diff_input_b = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    for &num_steps in &vks_steps {
+        for i in diff_input_b {
+            let a = Fr::from_str(&i.to_string()).unwrap();
+            let b = Fr::one();
+            let circuit = BenchmarkCircuitWithOneInput::<Bn256> {
+                num_steps,
+                a,
+                b,
+                output: fibbonacci(&a, &b, num_steps),
+                _engine_marker: std::marker::PhantomData,
+            };
+
+            circuits.push(circuit);
+        }
+    }
+
+    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
+    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+
+    let transcript_params = (&rescue_params, &rns_params);
+
+    let crs = open_crs_for_log2_of_size(20);
+
+    let mut vks = vec![];
+    let mut proofs = vec![];
+
+    for (index, circuit) in circuits.into_iter().enumerate() {
+        let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRNS<Bn256>>(
+            circuit,
+            transcript_params,
+            &crs,
+        );
+
+        let valid = better_cs::verifier::verify::<_, _, RescueTranscriptForRNS<Bn256>>(
+            &proof,
+            &vk,
+            Some(transcript_params),
+        )
+        .expect("must verify");
+        assert!(valid);
+
+        if index % diff_input_b.len() == 0 {
+            vks.push(vk)
+        };
+        proofs.push(proof);
+    }
+
+    let num_inputs = 1;
+    let aggregated_proofs_num = 36;
+    let crs_degree = 26;
+
+    // this is dummy
+    println!(
+        "Creating [proofs_num:{}, crs_degree:{}] setup and verification key",
+        aggregated_proofs_num, crs_degree
+    );
+    let crs = open_crs_for_log2_of_size(crs_degree);
+    let (vk_for_recursive_circuit, setup) = create_recursive_circuit_vk_and_setup(
+        aggregated_proofs_num,
+        num_inputs,
+        TREE_DEPTH,
+        &crs,
+    )
+    .expect("must create recursive circuit verification key");
+
+    let aggregated_proofs_indexes = (0..aggregated_proofs_num)
+        .map(|i| i / diff_input_b.len())
+        .collect::<Vec<_>>();
+    let aggregated_proofs = &proofs[0..aggregated_proofs_num];
+
+    let worker = Worker::new();
+    println!(
+        "Creating [proofs_num:{}, crs_degree:{}] proof",
+        aggregated_proofs_num, crs_degree
+    );
+    let _ = proof_recursive_aggregate_for_zklink(
+        TREE_DEPTH,
+        num_inputs,
+        &vks,
+        aggregated_proofs,
+        &aggregated_proofs_indexes,
+        &vk_for_recursive_circuit,
+        &setup,
+        &crs,
+        true,
+        &worker,
+    )
+    .expect("must check if satisfied and make a proof");
 }
