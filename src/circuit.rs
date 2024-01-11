@@ -9,18 +9,18 @@ use franklin_crypto::bellman::plonk::better_cs::generator::make_non_residues;
 use franklin_crypto::bellman::plonk::better_cs::keys::{Proof, VerificationKey};
 use franklin_crypto::bellman::SynthesisError;
 use franklin_crypto::circuit::Assignment;
+use franklin_crypto::circuit::sponge::CircuitGenericSponge;
 use franklin_crypto::plonk::circuit::allocated_num::*;
 use franklin_crypto::plonk::circuit::bigint::field::*;
 use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
 use franklin_crypto::plonk::circuit::boolean::*;
-use franklin_crypto::plonk::circuit::linear_combination::*;
 use franklin_crypto::plonk::circuit::rescue::*;
-use franklin_crypto::plonk::circuit::sha256::sha256 as sha256_circuit_hash;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::*;
 use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::*;
 use franklin_crypto::plonk::circuit::verifier_circuit::channel::*;
 use franklin_crypto::plonk::circuit::verifier_circuit::data_structs::*;
 use franklin_crypto::plonk::circuit::verifier_circuit::verifying_circuit::aggregate_proof;
+use franklin_crypto::poseidon::params::PoseidonParams;
 use franklin_crypto::rescue::{RescueEngine, RescueHashParams};
 
 use crate::utils::bytes_to_keep;
@@ -267,10 +267,9 @@ where
                     .as_ref()
                     .map(|el| E::Fr::from_str(&el[proof_index].to_string()).unwrap());
                 let path_allocated = AllocatedNum::alloc(cs, || Ok(*path_witness.get()?))?;
+                key_ids.push(path_allocated.clone());
 
                 let path_bits = path_allocated.into_bits_le(cs, Some(num_bits_in_proof_id))?;
-
-                key_ids.push(path_bits.clone());
 
                 let mut auth_path = vec![];
                 for path_idx in 0..self.vk_tree_depth {
@@ -306,54 +305,31 @@ where
 
         let mut hash_to_public_inputs = vec![];
         // VKs tree
-
-        hash_to_public_inputs.extend(allocated_num_to_alligned_big_endian(cs, &vk_root)?);
+        hash_to_public_inputs.push(vk_root);
 
         // first aggregate proof ids into u8
-        for le_bits in key_ids.iter().take(self.num_proofs_to_check) {
-            let mut le_bits = le_bits.to_vec();
-            assert!(le_bits.len() < 8);
-            le_bits.resize(8, Boolean::constant(false));
-
-            le_bits.reverse();
-
-            hash_to_public_inputs.extend(le_bits);
+        for key_id in key_ids.into_iter().take(self.num_proofs_to_check) {
+            hash_to_public_inputs.push(key_id);
         }
 
         // now aggregate original public inputs
         for allocated_proof in proof_witnesses.iter().take(self.num_proofs_to_check) {
             for input_idx in 0..self.num_inputs {
-                let input = &allocated_proof.input_values[input_idx];
-                let serialized = allocated_num_to_alligned_big_endian(cs, input)?;
-
-                hash_to_public_inputs.extend(serialized);
+                let input = allocated_proof.input_values[input_idx];
+                hash_to_public_inputs.push(input);
             }
         }
 
-        // now serialize field elements as limbs
-
-        hash_to_public_inputs.extend(serialize_point_into_big_endian(cs, &pair_with_generator)?);
-        hash_to_public_inputs.extend(serialize_point_into_big_endian(cs, &pair_with_x)?);
-
-        let input_commitment = sha256_circuit_hash(cs, &hash_to_public_inputs)?;
+        hash_to_public_inputs.extend(point_into_num(cs, &pair_with_generator)?);
+        hash_to_public_inputs.extend(point_into_num(cs, &pair_with_x)?);
 
         let keep = bytes_to_keep::<E>();
         assert!(keep <= 32);
 
-        // we don't need to reverse again
-
-        let mut lc = LinearCombination::<E>::zero();
-
-        let mut coeff = E::Fr::one();
-
-        for b in input_commitment[(32 - keep) * 8..].iter().rev() {
-            lc.add_assign_boolean_with_coeff(b, coeff);
-            coeff.double();
-        }
-
-        let as_num = lc.into_allocated_num(cs)?;
-
-        as_num.inputize(cs)?;
+        let params = PoseidonParams::<E, 2, 3>::default();
+        let inputs = hash_to_public_inputs.into_iter().map(|n| Num::Variable(n)).collect::<Vec<_>>();
+        let input_commitment = CircuitGenericSponge::hash_num(cs, &inputs, &params, None)?[0];
+        input_commitment.get_variable().inputize(cs)?;
 
         Ok(())
     }
@@ -421,6 +397,37 @@ fn serialize_point_into_big_endian<
     }
 
     Ok(serialized)
+}
+
+fn point_into_num<
+    'a,
+    E: Engine,
+    CS: ConstraintSystem<E>,
+    WP: WrappedAffinePoint<'a, E>,
+>(
+    cs: &mut CS,
+    point: &WP,
+) -> Result<Vec<AllocatedNum<E>>, SynthesisError> {
+    let raw_point = point.get_point();
+
+    let x = raw_point
+        .get_x()
+        .force_reduce_into_field(cs)?
+        .enforce_is_normalized(cs)?;
+    let y = raw_point
+        .get_y()
+        .force_reduce_into_field(cs)?
+        .enforce_is_normalized(cs)?;
+
+    let mut nums = vec![];
+    for coord in vec![x, y].into_iter() {
+        for limb in coord.into_limbs().into_iter() {
+            let num = limb.into_variable(); // this checks coeff and constant term internally
+            nums.push(num);
+        }
+    }
+
+    Ok(nums)
 }
 
 fn rescue_leaf_hash<E: RescueEngine, CS: ConstraintSystem<E>>(
