@@ -362,12 +362,10 @@ fn simulate_zklink_proofs() {
 
     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 
-    use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-
-    let is_valid = verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
         &vk_for_recursive_circut,
         &proof,
-        None,
+        Some(transcript_params),
     )
     .expect("must perform verification");
 
@@ -429,13 +427,16 @@ fn test_verification_from_binary() {
     let proof =
         NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(reader).expect("must read");
 
-    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
-    use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
+    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
+    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+    let transcript_params = (&rescue_params, &rns_params);
 
-    let is_valid = verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
+
+    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
         &vk_for_recursive_circut,
         &proof,
-        None,
+        Some(transcript_params),
     )
     .expect("must perform verification");
 

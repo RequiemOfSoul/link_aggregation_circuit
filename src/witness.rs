@@ -1,5 +1,5 @@
 use franklin_crypto::bellman::bn256::Bn256;
-use franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, ScalarEngine, SynthesisError};
+use franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError};
 use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, ProvingAssembly, SetupAssembly, TrivialAssembly, Width4MainGateWithDNext};
 use franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams;
@@ -11,6 +11,7 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::wit
 use franklin_crypto::plonk::circuit::verifier_circuit::channel::RescueChannelGadget;
 use franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
 use franklin_crypto::plonk::circuit::Width4WithCustomGates;
+use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
 use franklin_crypto::rescue::{RescueEngine, StatefulRescue};
 use franklin_crypto::rescue::bn256::Bn256RescueParams;
 use franklin_crypto::bellman::plonk::better_better_cs::{
@@ -38,7 +39,6 @@ pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
     rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) -> Result<[E::G1Affine; 2], SynthesisError> {
     use franklin_crypto::bellman::plonk::better_cs::verifier::verify_and_aggregate;
-    use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
 
     assert_eq!(
         proofs.len(),
@@ -345,7 +345,7 @@ pub fn create_zklink_recursive_aggregate(
     Ok(new)
 }
 
-/// Internally uses RollingKeccakTranscript for Ethereum
+/// Internally uses RescueTranscriptForRNS for Ethereum
 #[allow(clippy::too_many_arguments)]
 pub fn proof_recursive_aggregate_for_zklink<'a>(
     tree_depth: usize,
@@ -461,8 +461,6 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         }
     }
 
-    use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-
     let mut assembly =
         ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
     recursive_circuit_with_witness
@@ -470,12 +468,13 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         .expect("must synthesize");
     assembly.finalize();
 
+    let transcript_params = (rescue_params, rns_params);
     let timer = std::time::Instant::now();
-    let proof = assembly.create_proof::<_, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+    let proof = assembly.create_proof::<_, RescueTranscriptForRNS<Bn256>>(
         worker,
         recursive_circuit_setup,
         crs,
-        None,
+        Some(transcript_params),
     )?;
     println!(
         "Aggregated {} proofs circuit create proof spend {}",
@@ -490,10 +489,10 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 
-    let is_valid = verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
         recursive_circuit_vk,
         &proof,
-        None,
+        Some(transcript_params),
     )?;
 
     if !is_valid {
