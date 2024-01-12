@@ -49,9 +49,6 @@ pub struct RecursiveAggregationCircuit<
     pub rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     pub aux_data: AD,
     pub transcript_params: &'a T::Params,
-    // TODO: 1. check poseidon(block_commitments[i], price_commitments[i]) == commitment in proof
-    // public input
-    // TODO: 2. hash price_commitments accumulatedly and add it to final poseidon computation
     pub block_commitments: Option<Vec<E::Fr>>,
     pub price_commitments: Option<Vec<E::Fr>>,
     pub g2_elements: Option<[E::G2Affine; 2]>,
@@ -376,6 +373,14 @@ where
             .collect::<Vec<_>>();
         let input_commitment = CircuitGenericSponge::hash_num(cs, &inputs, &params, None)?[0];
         input_commitment.get_variable().inputize(cs)?;
+
+        let mut final_price_commitment = Num::zero();
+        for price_commitment in allocated_price_commitments.iter() {
+            let square =
+                final_price_commitment.mul(cs, &final_price_commitment)?;
+            final_price_commitment = square.add(cs, &price_commitment)?;
+        }
+        final_price_commitment.get_variable().inputize(cs)?;
 
         Ok(())
     }
