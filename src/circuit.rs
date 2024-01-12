@@ -294,8 +294,8 @@ where
             )?[0]
                 .get_variable();
             let expected_input = proof_witnesses[idx].input_values[0];
-            println!("!!EXPECTED INPUT: {:?}", expected_input.get_value().unwrap());
-            println!("!!ACTUAL INPUT: {:?}", commitment.get_value().unwrap());
+            println!("=====EXPECTED INPUT: {:?}", expected_input.get_value().unwrap());
+            println!("=====ACTUAL INPUT: {:?}", commitment.get_value().unwrap());
             expected_input.enforce_equal(cs, &commitment)?;
         }
         // allocate vk ids
@@ -310,6 +310,8 @@ where
                     .proof_ids
                     .as_ref()
                     .map(|el| E::Fr::from_str(&el[proof_index].to_string()).unwrap());
+                println!("proof_ids: {:?}", self.proof_ids);
+                println!("path_witness: {:?}", path_witness);
                 let path_allocated = AllocatedNum::alloc(cs, || Ok(*path_witness.get()?))?;
                 key_ids.push(path_allocated.clone());
 

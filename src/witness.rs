@@ -1,5 +1,5 @@
 use franklin_crypto::bellman::bn256::Bn256;
-use franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError};
+use franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError, ScalarEngine};
 use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, ProvingAssembly, SetupAssembly, TrivialAssembly, Width4MainGateWithDNext};
 use franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams;
@@ -227,6 +227,7 @@ pub fn create_recursive_circuit_setup<'a>(
 
     // let transcript_params = (&rescue_params, &rns_params);
 
+    println!("===== create_recursive_circuit_setup: num_proofs_to_check = {}, num_inputs = {}, vk_tree_depth = {}", num_proofs_to_check, num_inputs, vk_tree_depth);
     let recursive_circuit = RecursiveAggregationCircuitBn256 {
         num_proofs_to_check,
         num_inputs,
@@ -249,6 +250,7 @@ pub fn create_recursive_circuit_setup<'a>(
     };
 
     recursive_circuit.synthesize(&mut assembly)?;
+    println!("===== create_recursive_circuit_setup: finish synthesize");
 
     use franklin_crypto::bellman::worker::*;
     let worker = Worker::new();
@@ -439,6 +441,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     let block_commitments = [<Bn256 as ScalarEngine>::Fr::zero(); 2];
     let price_commitments = [<Bn256 as ScalarEngine>::Fr::one(); 2];
 
+    println!("=====proof recursive aggregate for zklink: num_proofs_to_check = {}, num_inputs = {}, vk_tree_depth = {}", num_proofs_to_check, num_inputs, tree_depth);
     let recursive_circuit_with_witness = RecursiveAggregationCircuitBn256 {
         num_proofs_to_check,
         num_inputs,
