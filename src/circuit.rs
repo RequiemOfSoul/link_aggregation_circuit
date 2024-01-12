@@ -327,7 +327,10 @@ where
         assert!(keep <= 32);
 
         let params = PoseidonParams::<E, 2, 3>::default();
-        let inputs = hash_to_public_inputs.into_iter().map(|n| Num::Variable(n)).collect::<Vec<_>>();
+        let inputs = hash_to_public_inputs
+            .into_iter()
+            .map(|n| Num::Variable(n))
+            .collect::<Vec<_>>();
         let input_commitment = CircuitGenericSponge::hash_num(cs, &inputs, &params, None)?[0];
         input_commitment.get_variable().inputize(cs)?;
 

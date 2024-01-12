@@ -11,6 +11,8 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::wit
 use franklin_crypto::plonk::circuit::verifier_circuit::channel::RescueChannelGadget;
 use franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
 use franklin_crypto::plonk::circuit::Width4WithCustomGates;
+use franklin_crypto::poseidon::params::PoseidonParams;
+use franklin_crypto::poseidon::sponge::GenericSponge;
 use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
 use franklin_crypto::rescue::{RescueEngine, StatefulRescue};
 use franklin_crypto::rescue::bn256::Bn256RescueParams;
@@ -20,7 +22,6 @@ use franklin_crypto::bellman::plonk::better_better_cs::{
 };
 use franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
 use crate::circuit::{RecursiveAggregationCircuit, ZKLINK_NUM_INPUTS};
-use crate::utils::bytes_to_keep;
 use crate::vks_tree::{create_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
 
 pub type RecursiveAggregationCircuitBn256<'a> = RecursiveAggregationCircuit<
@@ -99,9 +100,7 @@ pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
     aggregate: &[E::G1Affine; 2],
     rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) -> (E::Fr, Vec<E::Fr>) {
-    use std::io::Write;
-
-    let (input, limbed_aggregate) = make_public_input_for_hashing_and_limbed_aggreagated(
+    let (input, limbed_aggregate) = make_public_input_as_fr_for_hashing_and_limbed_aggreagated(
         vks_root,
         proof_indexes,
         proofs,
@@ -109,28 +108,9 @@ pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
         rns_params,
     );
 
-    let mut hash_output = [0u8; 32];
-
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(&input);
-    let result = hasher.finalize();
-
-    (&mut hash_output[..])
-        .write_all(&result)
-        .expect("must write");
-
-    let keep = bytes_to_keep::<E>();
-    for output in hash_output.iter_mut().take(32 - keep) {
-        *output = 0;
-    }
-
-    let mut repr = <E::Fr as PrimeField>::Repr::default();
-    repr.read_be(&hash_output[..]).expect("must read BE repr");
-
-    let fe = E::Fr::from_repr(repr).expect("must be valid representation");
-
-    (fe, limbed_aggregate)
+    let params = PoseidonParams::<E, 2, 3>::default();
+    let hash = GenericSponge::hash(&input, &params, None)[0];
+    (hash, limbed_aggregate)
 }
 
 fn make_public_input_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParams<E>>(
@@ -156,6 +136,38 @@ fn make_public_input_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParam
 
     add_point(&aggregate[0], &mut result, rns_params);
     add_point(&aggregate[1], &mut result, rns_params);
+
+    let mut limbed_aggreagate = vec![];
+    decompose_point_into_limbs(&aggregate[0], &mut limbed_aggreagate, rns_params);
+    decompose_point_into_limbs(&aggregate[1], &mut limbed_aggreagate, rns_params);
+
+    (result, limbed_aggreagate)
+}
+
+fn make_public_input_as_fr_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParams<E>>(
+    vks_root: E::Fr,
+    proof_indexes: &[usize],
+    proofs: &[Proof<E, P>],
+    aggregate: &[E::G1Affine; 2],
+    rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
+) -> (Vec<E::Fr>, Vec<E::Fr>) {
+    let mut result = vec![];
+    result.push(vks_root);
+
+    // add_field_element(&vks_root, &mut result);
+    for idx in proof_indexes.iter() {
+        assert!(*idx < 256);
+        result.push(E::Fr::from_str(&idx.to_string()).unwrap());
+    }
+
+    for proof in proofs.iter() {
+        for input in proof.input_values.iter() {
+            result.push(*input);
+        }
+    }
+
+    decompose_point_into_limbs(&aggregate[0], &mut result, rns_params);
+    decompose_point_into_limbs(&aggregate[1], &mut result, rns_params);
 
     let mut limbed_aggreagate = vec![];
     decompose_point_into_limbs(&aggregate[0], &mut limbed_aggreagate, rns_params);
