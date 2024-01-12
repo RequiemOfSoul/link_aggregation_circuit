@@ -438,8 +438,12 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
     let aux_data = BN256AuxData::new();
 
-    let block_commitments = [<Bn256 as ScalarEngine>::Fr::zero(); 2];
-    let price_commitments = [<Bn256 as ScalarEngine>::Fr::one(); 2];
+    let mut block_commitments = vec![];
+    let mut price_commitments = vec![];
+    for _ in 0..proofs_to_aggregate.len() {
+        block_commitments.push(<Bn256 as ScalarEngine>::Fr::zero());
+        price_commitments.push(<Bn256 as ScalarEngine>::Fr::one());
+    }
 
     println!("=====proof recursive aggregate for zklink: num_proofs_to_check = {}, num_inputs = {}, vk_tree_depth = {}", num_proofs_to_check, num_inputs, tree_depth);
     let recursive_circuit_with_witness = RecursiveAggregationCircuitBn256 {
@@ -459,8 +463,8 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         g2_elements: Some(g2_bases),
 
         _m: std::marker::PhantomData,
-        block_commitments: Some(block_commitments.to_vec()),
-        price_commitments: Some(price_commitments.to_vec()),
+        block_commitments: Some(block_commitments),
+        price_commitments: Some(price_commitments),
     };
 
     if quick_check_if_satisifed {
