@@ -8,8 +8,8 @@ use franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams 
 use franklin_crypto::bellman::plonk::better_cs::generator::make_non_residues;
 use franklin_crypto::bellman::plonk::better_cs::keys::{Proof, VerificationKey};
 use franklin_crypto::bellman::SynthesisError;
-use franklin_crypto::circuit::Assignment;
 use franklin_crypto::circuit::sponge::CircuitGenericSponge;
+use franklin_crypto::circuit::Assignment;
 use franklin_crypto::plonk::circuit::allocated_num::*;
 use franklin_crypto::plonk::circuit::bigint::field::*;
 use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
@@ -49,7 +49,11 @@ pub struct RecursiveAggregationCircuit<
     pub rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     pub aux_data: AD,
     pub transcript_params: &'a T::Params,
-
+    // TODO: 1. check poseidon(block_commitments[i], price_commitments[i]) == commitment in proof
+    // public input
+    // TODO: 2. hash price_commitments accumulatedly and add it to final poseidon computation
+    pub block_commitments: Option<Vec<E::Fr>>,
+    pub price_commitments: Option<Vec<E::Fr>>,
     pub g2_elements: Option<[E::G2Affine; 2]>,
 
     pub _m: std::marker::PhantomData<WP>,
@@ -83,6 +87,12 @@ where
         }
         if let Some(vk_auth_paths) = self.vk_auth_paths.as_ref() {
             assert_eq!(self.num_proofs_to_check, vk_auth_paths.len());
+        }
+        if let Some(block_commitments) = self.vk_auth_paths.as_ref() {
+            assert_eq!(self.num_proofs_to_check, block_commitments.len());
+        }
+        if let Some(price_commitments) = self.vk_auth_paths.as_ref() {
+            assert_eq!(self.num_proofs_to_check, price_commitments.len());
         }
 
         // Allocate everything, get fs scalar for aggregation
@@ -254,6 +264,40 @@ where
             dbg!(valid);
         }
 
+        let allocated_block_commitments = self
+            .block_commitments
+            .as_ref()
+            .map(|el| {
+                el.iter()
+                    .map(|el| Num::Variable(AllocatedNum::alloc(cs, || Ok(*el)).unwrap()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or(vec![]);
+        let allocated_price_commitments = self
+            .price_commitments
+            .as_ref()
+            .map(|el| {
+                el.iter()
+                    .map(|el| Num::Variable(AllocatedNum::alloc(cs, || Ok(*el)).unwrap()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or(vec![]);
+
+        // check public input
+        let params = PoseidonParams::<E, 2, 3>::default();
+        for idx in 0..self.num_proofs_to_check {
+            let commitment = CircuitGenericSponge::hash_num(
+                cs,
+                &[
+                    allocated_block_commitments[idx],
+                    allocated_price_commitments[idx],
+                ],
+                &params,
+                None,
+            )?[0].get_variable();
+            let expected_input = proof_witnesses[idx].input_values[0];
+            expected_input.enforce_equal(cs, &commitment)?;
+        }
         // allocate vk ids
 
         let mut key_ids = vec![];
@@ -326,7 +370,6 @@ where
         let keep = bytes_to_keep::<E>();
         assert!(keep <= 32);
 
-        let params = PoseidonParams::<E, 2, 3>::default();
         let inputs = hash_to_public_inputs
             .into_iter()
             .map(|n| Num::Variable(n))
@@ -402,12 +445,7 @@ fn serialize_point_into_big_endian<
     Ok(serialized)
 }
 
-fn point_into_num<
-    'a,
-    E: Engine,
-    CS: ConstraintSystem<E>,
-    WP: WrappedAffinePoint<'a, E>,
->(
+fn point_into_num<'a, E: Engine, CS: ConstraintSystem<E>, WP: WrappedAffinePoint<'a, E>>(
     cs: &mut CS,
     point: &WP,
 ) -> Result<Vec<AllocatedNum<E>>, SynthesisError> {

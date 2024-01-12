@@ -1,7 +1,7 @@
 use franklin_crypto::bellman::kate_commitment::*;
 use franklin_crypto::bellman::pairing::{CurveAffine, Engine};
 use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
-use franklin_crypto::bellman::pairing::ff::{Field, ScalarEngine};
+use franklin_crypto::bellman::pairing::ff::Field;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
     Circuit, TrivialAssembly, Width4MainGateWithDNext,
 };
@@ -145,6 +145,8 @@ fn test_two_proofs() {
         g2_elements: Some(g2_bases),
 
         _m: std::marker::PhantomData,
+        block_commitments: None,
+        price_commitments: None,
     };
 
     let mut cs = TrivialAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();

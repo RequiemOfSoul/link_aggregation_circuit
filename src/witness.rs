@@ -244,6 +244,8 @@ pub fn create_recursive_circuit_setup<'a>(
         g2_elements: None,
 
         _m: std::marker::PhantomData,
+        block_commitments: None,
+        price_commitments: None,
     };
 
     recursive_circuit.synthesize(&mut assembly)?;
@@ -451,6 +453,8 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         g2_elements: Some(g2_bases),
 
         _m: std::marker::PhantomData,
+        block_commitments: None,
+        price_commitments: None,
     };
 
     if quick_check_if_satisifed {
