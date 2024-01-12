@@ -291,8 +291,11 @@ where
                 ],
                 &params,
                 None,
-            )?[0].get_variable();
+            )?[0]
+                .get_variable();
             let expected_input = proof_witnesses[idx].input_values[0];
+            println!("!!EXPECTED INPUT: {:?}", expected_input.get_value().unwrap());
+            println!("!!ACTUAL INPUT: {:?}", commitment.get_value().unwrap());
             expected_input.enforce_equal(cs, &commitment)?;
         }
         // allocate vk ids
