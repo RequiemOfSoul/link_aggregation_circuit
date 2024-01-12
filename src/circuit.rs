@@ -261,42 +261,36 @@ where
             dbg!(valid);
         }
 
-        let allocated_block_commitments = self
-            .block_commitments
-            .as_ref()
-            .map(|el| {
-                el.iter()
-                    .map(|el| Num::Variable(AllocatedNum::alloc(cs, || Ok(*el)).unwrap()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or(vec![]);
-        let allocated_price_commitments = self
-            .price_commitments
-            .as_ref()
-            .map(|el| {
-                el.iter()
-                    .map(|el| Num::Variable(AllocatedNum::alloc(cs, || Ok(*el)).unwrap()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or(vec![]);
-
-        // check public input
+        // check public input and compute final price commitment
+        let mut final_price_commitment = Num::zero();
         let params = PoseidonParams::<E, 2, 3>::default();
         for idx in 0..self.num_proofs_to_check {
+            let block_commitment = self.block_commitments.as_ref().map(|el| el[idx]);
+            let price_commitment = self.price_commitments.as_ref().map(|el| el[idx]);
+            let allocated_block_commitment =
+                Num::Variable(AllocatedNum::alloc(cs, || Ok(*block_commitment.get()?))?);
+            let allocated_price_commitment =
+                Num::Variable(AllocatedNum::alloc(cs, || Ok(*price_commitment.get()?))?);
+
             let commitment = CircuitGenericSponge::hash_num(
                 cs,
-                &[
-                    allocated_block_commitments[idx],
-                    allocated_price_commitments[idx],
-                ],
+                &[allocated_block_commitment, allocated_price_commitment],
                 &params,
                 None,
             )?[0]
                 .get_variable();
             let expected_input = proof_witnesses[idx].input_values[0];
-            println!("=====EXPECTED INPUT: {:?}", expected_input.get_value().unwrap());
-            println!("=====ACTUAL INPUT: {:?}", commitment.get_value().unwrap());
+            println!("=====ALL inputs: {:?}", proof_witnesses[idx].input_values);
+            println!("=====ALL inputs len: {}", proof_witnesses[idx].input_values.len());
+            println!(
+                "=====EXPECTED INPUT: {:?}",
+                expected_input.get_value()
+            );
+            println!("=====ACTUAL INPUT: {:?}", commitment.get_value());
             expected_input.enforce_equal(cs, &commitment)?;
+            // Compute final price commitment
+            let square = final_price_commitment.mul(cs, &final_price_commitment)?;
+            final_price_commitment = square.add(cs, &allocated_price_commitment)?;
         }
         // allocate vk ids
 
@@ -379,12 +373,6 @@ where
         let input_commitment = CircuitGenericSponge::hash_num(cs, &inputs, &params, None)?[0];
         input_commitment.get_variable().inputize(cs)?;
 
-        let mut final_price_commitment = Num::zero();
-        for price_commitment in allocated_price_commitments.iter() {
-            let square =
-                final_price_commitment.mul(cs, &final_price_commitment)?;
-            final_price_commitment = square.add(cs, &price_commitment)?;
-        }
         final_price_commitment.get_variable().inputize(cs)?;
 
         Ok(())
