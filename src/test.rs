@@ -60,9 +60,41 @@ impl<E: Engine> OldCircuit<E, OldActualParams> for TestCircuitWithOneInput<E> {
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {
         // Set constant public input for test
-        let commitment =
-            E::Fr::from_str("463050708163873734388448557620199618308345728415644526085937483060067100214")
-                .unwrap();
+        let commitment = E::Fr::from_str(
+            "463050708163873734388448557620199618308345728415644526085937483060067100214",
+        )
+        .unwrap();
+        cs.alloc_input(|| Ok(commitment))?;
+        self.inner_circuit.synthesize(cs)
+    }
+}
+
+struct TestCircuit<E: Engine> {
+    inner_circuit: BenchmarkCircuit<E>,
+    block_commitments: E::Fr,
+    price_commitments: E::Fr,
+}
+
+impl<E: Engine> TestCircuit<E> {
+    pub fn new(circuit: BenchmarkCircuit<E>) -> Self {
+        Self {
+            inner_circuit: circuit,
+            block_commitments: <E as ScalarEngine>::Fr::zero(),
+            price_commitments: <E as ScalarEngine>::Fr::zero(),
+        }
+    }
+}
+
+impl<E: Engine> OldCircuit<E, OldActualParams> for TestCircuit<E> {
+    fn synthesize<CS: OldConstraintSystem<E, OldActualParams>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<(), SynthesisError> {
+        // Set constant public input for test
+        let commitment = E::Fr::from_str(
+            "463050708163873734388448557620199618308345728415644526085937483060067100214",
+        )
+        .unwrap();
         cs.alloc_input(|| Ok(commitment))?;
         self.inner_circuit.synthesize(cs)
     }
@@ -74,23 +106,23 @@ fn test_two_proofs() {
     let b = Fr::one();
 
     let num_steps = 40;
-    let circuit_0 = BenchmarkCircuit::<Bn256> {
+    let circuit_0 = TestCircuit::new(BenchmarkCircuit::<Bn256> {
         num_steps,
         a,
         b,
         output: fibbonacci(&a, &b, num_steps),
         _engine_marker: std::marker::PhantomData,
-    };
+    });
 
     let num_steps = 18;
 
-    let circuit_1 = BenchmarkCircuit::<Bn256> {
+    let circuit_1 = TestCircuit::new(BenchmarkCircuit::<Bn256> {
         num_steps,
         a,
         b,
         output: fibbonacci(&a, &b, num_steps),
         _engine_marker: std::marker::PhantomData,
-    };
+    });
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
     let rescue_params = Bn256RescueParams::new_checked_2_into_1();
@@ -152,6 +184,12 @@ fn test_two_proofs() {
         &rns_params,
     );
 
+    let mut block_commitments = vec![];
+    let mut price_commitments = vec![];
+    for _ in 0..2 {
+        block_commitments.push(<Bn256 as ScalarEngine>::Fr::zero());
+        price_commitments.push(<Bn256 as ScalarEngine>::Fr::one());
+    }
     println!("Creating recursive circuit");
     let recursive_circuit = RecursiveAggregationCircuit::<
         Bn256,
@@ -161,7 +199,7 @@ fn test_two_proofs() {
         RescueChannelGadget<Bn256>,
     > {
         num_proofs_to_check: 2,
-        num_inputs: 3,
+        num_inputs: 4,
         vk_tree_depth: 1,
         vk_root: Some(vks_tree_root),
         vk_witnesses: Some(vec![vk_0, vk_1]),
@@ -176,8 +214,8 @@ fn test_two_proofs() {
         g2_elements: Some(g2_bases),
 
         _m: std::marker::PhantomData,
-        block_commitments: None,
-        price_commitments: None,
+        block_commitments: Some(block_commitments),
+        price_commitments: Some(price_commitments),
     };
 
     let mut cs = TrivialAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
@@ -188,11 +226,11 @@ fn test_two_proofs() {
     cs.finalize();
     println!("Padded number of gates: {}", cs.n());
     assert!(cs.is_satisfied());
-    assert_eq!(cs.num_inputs, 1);
+    assert_eq!(cs.num_inputs, 2);
 }
 
 fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(
-    circuit: BenchmarkCircuit<E>,
+    circuit: TestCircuit<E>,
     transcript_params: <T as Prng<E::Fr>>::InitializationParameters,
 ) -> (
     VerificationKey<E, OldActualParams>,
