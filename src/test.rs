@@ -190,7 +190,6 @@ fn test_two_proofs() {
         block_commitments.push(<Bn256 as ScalarEngine>::Fr::zero());
         price_commitments.push(<Bn256 as ScalarEngine>::Fr::one());
     }
-    println!("Creating recursive circuit");
     let recursive_circuit = RecursiveAggregationCircuit::<
         Bn256,
         OldActualParams,
