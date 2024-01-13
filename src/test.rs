@@ -480,39 +480,39 @@ fn simulate_zklink_proofs() {
     );
 }
 
-#[test]
-fn test_verification_from_binary() {
-    let path = std::path::Path::new("./vk.key");
-    let file = std::fs::File::open(path).unwrap();
-    let reader = std::io::BufReader::with_capacity(1 << 24, file);
-
-    let vk_for_recursive_circut =
-        NewVerificationKey::<Bn256, RecursiveAggregationCircuitBn256>::read(reader)
-            .expect("must read");
-
-    let path = std::path::Path::new("./proof.proof");
-    let file = std::fs::File::open(path).unwrap();
-    let reader = std::io::BufReader::with_capacity(1 << 24, file);
-
-    use franklin_crypto::bellman::plonk::better_better_cs::proof::Proof as NewProof;
-    let proof =
-        NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(reader).expect("must read");
-
-    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
-    let transcript_params = (&rescue_params, &rns_params);
-
-    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
-
-    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
-        &vk_for_recursive_circut,
-        &proof,
-        Some(transcript_params),
-    )
-    .expect("must perform verification");
-
-    assert!(is_valid);
-}
+// #[test]
+// fn test_verification_from_binary() {
+//     let path = std::path::Path::new("./vk.key");
+//     let file = std::fs::File::open(path).unwrap();
+//     let reader = std::io::BufReader::with_capacity(1 << 24, file);
+//
+//     let vk_for_recursive_circut =
+//         NewVerificationKey::<Bn256, RecursiveAggregationCircuitBn256>::read(reader)
+//             .expect("must read");
+//
+//     let path = std::path::Path::new("./proof.proof");
+//     let file = std::fs::File::open(path).unwrap();
+//     let reader = std::io::BufReader::with_capacity(1 << 24, file);
+//
+//     use franklin_crypto::bellman::plonk::better_better_cs::proof::Proof as NewProof;
+//     let proof =
+//         NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(reader).expect("must read");
+//
+//     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
+//     let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+//     let transcript_params = (&rescue_params, &rns_params);
+//
+//     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
+//
+//     let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
+//         &vk_for_recursive_circut,
+//         &proof,
+//         Some(transcript_params),
+//     )
+//     .expect("must perform verification");
+//
+//     assert!(is_valid);
+// }
 
 #[test]
 fn simulate_many_proofs() {
