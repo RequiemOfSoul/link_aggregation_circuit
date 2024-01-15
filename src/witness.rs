@@ -1,5 +1,5 @@
 use franklin_crypto::bellman::bn256::Bn256;
-use franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, ScalarEngine, SynthesisError};
+use franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError, ScalarEngine};
 use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, ProvingAssembly, SetupAssembly, TrivialAssembly, Width4MainGateWithDNext};
 use franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams;
@@ -11,6 +11,9 @@ use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::wit
 use franklin_crypto::plonk::circuit::verifier_circuit::channel::RescueChannelGadget;
 use franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
 use franklin_crypto::plonk::circuit::Width4WithCustomGates;
+use franklin_crypto::poseidon::params::PoseidonParams;
+use franklin_crypto::poseidon::sponge::GenericSponge;
+use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
 use franklin_crypto::rescue::{RescueEngine, StatefulRescue};
 use franklin_crypto::rescue::bn256::Bn256RescueParams;
 use franklin_crypto::bellman::plonk::better_better_cs::{
@@ -19,7 +22,6 @@ use franklin_crypto::bellman::plonk::better_better_cs::{
 };
 use franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
 use crate::circuit::{RecursiveAggregationCircuit, ZKLINK_NUM_INPUTS};
-use crate::utils::bytes_to_keep;
 use crate::vks_tree::{create_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
 
 pub type RecursiveAggregationCircuitBn256<'a> = RecursiveAggregationCircuit<
@@ -38,7 +40,6 @@ pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
     rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) -> Result<[E::G1Affine; 2], SynthesisError> {
     use franklin_crypto::bellman::plonk::better_cs::verifier::verify_and_aggregate;
-    use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
 
     assert_eq!(
         proofs.len(),
@@ -99,9 +100,7 @@ pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
     aggregate: &[E::G1Affine; 2],
     rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) -> (E::Fr, Vec<E::Fr>) {
-    use std::io::Write;
-
-    let (input, limbed_aggregate) = make_public_input_for_hashing_and_limbed_aggreagated(
+    let (input, limbed_aggregate) = make_public_input_as_fr_for_hashing_and_limbed_aggreagated(
         vks_root,
         proof_indexes,
         proofs,
@@ -109,28 +108,9 @@ pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
         rns_params,
     );
 
-    let mut hash_output = [0u8; 32];
-
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(&input);
-    let result = hasher.finalize();
-
-    (&mut hash_output[..])
-        .write_all(&result)
-        .expect("must write");
-
-    let keep = bytes_to_keep::<E>();
-    for output in hash_output.iter_mut().take(32 - keep) {
-        *output = 0;
-    }
-
-    let mut repr = <E::Fr as PrimeField>::Repr::default();
-    repr.read_be(&hash_output[..]).expect("must read BE repr");
-
-    let fe = E::Fr::from_repr(repr).expect("must be valid representation");
-
-    (fe, limbed_aggregate)
+    let params = PoseidonParams::<E, 2, 3>::default();
+    let hash = GenericSponge::hash(&input, &params, None)[0];
+    (hash, limbed_aggregate)
 }
 
 fn make_public_input_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParams<E>>(
@@ -156,6 +136,38 @@ fn make_public_input_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParam
 
     add_point(&aggregate[0], &mut result, rns_params);
     add_point(&aggregate[1], &mut result, rns_params);
+
+    let mut limbed_aggreagate = vec![];
+    decompose_point_into_limbs(&aggregate[0], &mut limbed_aggreagate, rns_params);
+    decompose_point_into_limbs(&aggregate[1], &mut limbed_aggreagate, rns_params);
+
+    (result, limbed_aggreagate)
+}
+
+fn make_public_input_as_fr_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParams<E>>(
+    vks_root: E::Fr,
+    proof_indexes: &[usize],
+    proofs: &[Proof<E, P>],
+    aggregate: &[E::G1Affine; 2],
+    rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
+) -> (Vec<E::Fr>, Vec<E::Fr>) {
+    let mut result = vec![];
+    result.push(vks_root);
+
+    // add_field_element(&vks_root, &mut result);
+    for idx in proof_indexes.iter() {
+        assert!(*idx < 256);
+        result.push(E::Fr::from_str(&idx.to_string()).unwrap());
+    }
+
+    for proof in proofs.iter() {
+        for input in proof.input_values.iter() {
+            result.push(*input);
+        }
+    }
+
+    decompose_point_into_limbs(&aggregate[0], &mut result, rns_params);
+    decompose_point_into_limbs(&aggregate[1], &mut result, rns_params);
 
     let mut limbed_aggreagate = vec![];
     decompose_point_into_limbs(&aggregate[0], &mut limbed_aggreagate, rns_params);
@@ -232,6 +244,8 @@ pub fn create_recursive_circuit_setup<'a>(
         g2_elements: None,
 
         _m: std::marker::PhantomData,
+        block_commitments: None,
+        price_commitments: None,
     };
 
     recursive_circuit.synthesize(&mut assembly)?;
@@ -345,7 +359,7 @@ pub fn create_zklink_recursive_aggregate(
     Ok(new)
 }
 
-/// Internally uses RollingKeccakTranscript for Ethereum
+/// Internally uses RescueTranscriptForRNS for Ethereum
 #[allow(clippy::too_many_arguments)]
 pub fn proof_recursive_aggregate_for_zklink<'a>(
     tree_depth: usize,
@@ -414,13 +428,20 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         rns_params,
     );
 
-    assert_eq!(recursive_circuit_setup.num_inputs, 1);
+    assert_eq!(recursive_circuit_setup.num_inputs, 2);
     assert_eq!(recursive_circuit_vk.total_lookup_entries_length, 0);
 
     let mut g2_bases = [<<Bn256 as Engine>::G2Affine as CurveAffine>::zero(); 2];
     g2_bases.copy_from_slice(&crs.g2_monomial_bases.as_ref()[..]);
 
     let aux_data = BN256AuxData::new();
+
+    let mut block_commitments = vec![];
+    let mut price_commitments = vec![];
+    for _ in 0..proofs_to_aggregate.len() {
+        block_commitments.push(<Bn256 as ScalarEngine>::Fr::zero());
+        price_commitments.push(<Bn256 as ScalarEngine>::Fr::one());
+    }
 
     let recursive_circuit_with_witness = RecursiveAggregationCircuitBn256 {
         num_proofs_to_check,
@@ -439,6 +460,8 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         g2_elements: Some(g2_bases),
 
         _m: std::marker::PhantomData,
+        block_commitments: Some(block_commitments),
+        price_commitments: Some(price_commitments),
     };
 
     if quick_check_if_satisifed {
@@ -461,8 +484,6 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         }
     }
 
-    use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-
     let mut assembly =
         ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
     recursive_circuit_with_witness
@@ -470,12 +491,13 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         .expect("must synthesize");
     assembly.finalize();
 
+    let transcript_params = (rescue_params, rns_params);
     let timer = std::time::Instant::now();
-    let proof = assembly.create_proof::<_, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+    let proof = assembly.create_proof::<_, RescueTranscriptForRNS<Bn256>>(
         worker,
         recursive_circuit_setup,
         crs,
-        None,
+        Some(transcript_params),
     )?;
     println!(
         "Aggregated {} proofs circuit create proof spend {}",
@@ -490,10 +512,10 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 
-    let is_valid = verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
         recursive_circuit_vk,
         &proof,
-        None,
+        Some(transcript_params),
     )?;
 
     if !is_valid {

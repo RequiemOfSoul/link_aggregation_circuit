@@ -1,13 +1,13 @@
-use franklin_crypto::bellman::kate_commitment::*;
+use franklin_crypto::bellman::{kate_commitment::*, SynthesisError, ScalarEngine};
 use franklin_crypto::bellman::pairing::{CurveAffine, Engine};
 use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
-use franklin_crypto::bellman::pairing::ff::{Field, ScalarEngine};
+use franklin_crypto::bellman::pairing::ff::Field;
 use franklin_crypto::bellman::plonk::better_better_cs::cs::{
     Circuit, TrivialAssembly, Width4MainGateWithDNext,
 };
 use franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey as NewVerificationKey;
 use franklin_crypto::bellman::plonk::better_cs;
-use franklin_crypto::bellman::plonk::better_cs::cs::Circuit as OldCircuit;
+use franklin_crypto::bellman::plonk::better_cs::cs::{Circuit as OldCircuit, ConstraintSystem as OldConstraintSystem};
 use franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams as OldActualParams;
 use franklin_crypto::bellman::plonk::better_cs::generator::GeneratorAssembly4WithNextStep as OldActualAssembly;
 use franklin_crypto::bellman::plonk::better_cs::keys::{
@@ -38,29 +38,91 @@ use crate::witness::{
 
 use super::circuit::*;
 
+struct TestCircuitWithOneInput<E: Engine> {
+    inner_circuit: BenchmarkCircuitWithOneInput<E>,
+    block_commitments: E::Fr,
+    price_commitments: E::Fr,
+}
+
+impl<E: Engine> TestCircuitWithOneInput<E> {
+    pub fn new(circuit: BenchmarkCircuitWithOneInput<E>) -> Self {
+        Self {
+            inner_circuit: circuit,
+            block_commitments: <E as ScalarEngine>::Fr::zero(),
+            price_commitments: <E as ScalarEngine>::Fr::zero(),
+        }
+    }
+}
+
+impl<E: Engine> OldCircuit<E, OldActualParams> for TestCircuitWithOneInput<E> {
+    fn synthesize<CS: OldConstraintSystem<E, OldActualParams>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<(), SynthesisError> {
+        // Set constant public input for test
+        let commitment = E::Fr::from_str(
+            "463050708163873734388448557620199618308345728415644526085937483060067100214",
+        )
+        .unwrap();
+        cs.alloc_input(|| Ok(commitment))?;
+        self.inner_circuit.synthesize(cs)
+    }
+}
+
+struct TestCircuit<E: Engine> {
+    inner_circuit: BenchmarkCircuit<E>,
+    block_commitments: E::Fr,
+    price_commitments: E::Fr,
+}
+
+impl<E: Engine> TestCircuit<E> {
+    pub fn new(circuit: BenchmarkCircuit<E>) -> Self {
+        Self {
+            inner_circuit: circuit,
+            block_commitments: <E as ScalarEngine>::Fr::zero(),
+            price_commitments: <E as ScalarEngine>::Fr::zero(),
+        }
+    }
+}
+
+impl<E: Engine> OldCircuit<E, OldActualParams> for TestCircuit<E> {
+    fn synthesize<CS: OldConstraintSystem<E, OldActualParams>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<(), SynthesisError> {
+        // Set constant public input for test
+        let commitment = E::Fr::from_str(
+            "463050708163873734388448557620199618308345728415644526085937483060067100214",
+        )
+        .unwrap();
+        cs.alloc_input(|| Ok(commitment))?;
+        self.inner_circuit.synthesize(cs)
+    }
+}
+
 #[test]
 fn test_two_proofs() {
     let a = Fr::one();
     let b = Fr::one();
 
     let num_steps = 40;
-    let circuit_0 = BenchmarkCircuit::<Bn256> {
+    let circuit_0 = TestCircuit::new(BenchmarkCircuit::<Bn256> {
         num_steps,
         a,
         b,
         output: fibbonacci(&a, &b, num_steps),
         _engine_marker: std::marker::PhantomData,
-    };
+    });
 
     let num_steps = 18;
 
-    let circuit_1 = BenchmarkCircuit::<Bn256> {
+    let circuit_1 = TestCircuit::new(BenchmarkCircuit::<Bn256> {
         num_steps,
         a,
         b,
         output: fibbonacci(&a, &b, num_steps),
         _engine_marker: std::marker::PhantomData,
-    };
+    });
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
     let rescue_params = Bn256RescueParams::new_checked_2_into_1();
@@ -122,6 +184,12 @@ fn test_two_proofs() {
         &rns_params,
     );
 
+    let mut block_commitments = vec![];
+    let mut price_commitments = vec![];
+    for _ in 0..2 {
+        block_commitments.push(<Bn256 as ScalarEngine>::Fr::zero());
+        price_commitments.push(<Bn256 as ScalarEngine>::Fr::one());
+    }
     let recursive_circuit = RecursiveAggregationCircuit::<
         Bn256,
         OldActualParams,
@@ -130,7 +198,7 @@ fn test_two_proofs() {
         RescueChannelGadget<Bn256>,
     > {
         num_proofs_to_check: 2,
-        num_inputs: 3,
+        num_inputs: 4,
         vk_tree_depth: 1,
         vk_root: Some(vks_tree_root),
         vk_witnesses: Some(vec![vk_0, vk_1]),
@@ -145,6 +213,8 @@ fn test_two_proofs() {
         g2_elements: Some(g2_bases),
 
         _m: std::marker::PhantomData,
+        block_commitments: Some(block_commitments),
+        price_commitments: Some(price_commitments),
     };
 
     let mut cs = TrivialAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
@@ -155,11 +225,11 @@ fn test_two_proofs() {
     cs.finalize();
     println!("Padded number of gates: {}", cs.n());
     assert!(cs.is_satisfied());
-    assert_eq!(cs.num_inputs, 1);
+    assert_eq!(cs.num_inputs, 2);
 }
 
 fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(
-    circuit: BenchmarkCircuit<E>,
+    circuit: TestCircuit<E>,
     transcript_params: <T as Prng<E::Fr>>::InitializationParameters,
 ) -> (
     VerificationKey<E, OldActualParams>,
@@ -250,7 +320,7 @@ fn create_vk() {
 }
 
 fn make_vk_and_proof_for_crs<E: Engine, T: Transcript<E::Fr>>(
-    circuit: BenchmarkCircuitWithOneInput<E>,
+    circuit: TestCircuitWithOneInput<E>,
     transcript_params: <T as Prng<E::Fr>>::InitializationParameters,
     crs: &Crs<E, CrsForMonomialForm>,
 ) -> (
@@ -293,13 +363,13 @@ fn simulate_zklink_proofs() {
 
     let mut circuits = vec![];
     for num_steps in vec![18, 40, 25, 35].into_iter() {
-        let circuit = BenchmarkCircuitWithOneInput::<Bn256> {
+        let circuit = TestCircuitWithOneInput::new(BenchmarkCircuitWithOneInput::<Bn256> {
             num_steps,
             a,
             b,
             output: fibbonacci(&a, &b, num_steps),
             _engine_marker: std::marker::PhantomData,
-        };
+        });
 
         circuits.push(circuit);
     }
@@ -333,7 +403,7 @@ fn simulate_zklink_proofs() {
         proofs.push(proof);
     }
 
-    let num_inputs = 1;
+    let num_inputs = 2;
     let num_proofs_to_check = 2;
     let tree_depth = 3;
 
@@ -362,12 +432,10 @@ fn simulate_zklink_proofs() {
 
     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 
-    use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-
-    let is_valid = verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
+    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
         &vk_for_recursive_circut,
         &proof,
-        None,
+        Some(transcript_params),
     )
     .expect("must perform verification");
 
@@ -411,36 +479,39 @@ fn simulate_zklink_proofs() {
     );
 }
 
-#[test]
-fn test_verification_from_binary() {
-    let path = std::path::Path::new("./vk.key");
-    let file = std::fs::File::open(path).unwrap();
-    let reader = std::io::BufReader::with_capacity(1 << 24, file);
-
-    let vk_for_recursive_circut =
-        NewVerificationKey::<Bn256, RecursiveAggregationCircuitBn256>::read(reader)
-            .expect("must read");
-
-    let path = std::path::Path::new("./proof.proof");
-    let file = std::fs::File::open(path).unwrap();
-    let reader = std::io::BufReader::with_capacity(1 << 24, file);
-
-    use franklin_crypto::bellman::plonk::better_better_cs::proof::Proof as NewProof;
-    let proof =
-        NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(reader).expect("must read");
-
-    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
-    use franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-
-    let is_valid = verify::<_, _, RollingKeccakTranscript<<Bn256 as ScalarEngine>::Fr>>(
-        &vk_for_recursive_circut,
-        &proof,
-        None,
-    )
-    .expect("must perform verification");
-
-    assert!(is_valid);
-}
+// #[test]
+// fn test_verification_from_binary() {
+//     let path = std::path::Path::new("./vk.key");
+//     let file = std::fs::File::open(path).unwrap();
+//     let reader = std::io::BufReader::with_capacity(1 << 24, file);
+//
+//     let vk_for_recursive_circut =
+//         NewVerificationKey::<Bn256, RecursiveAggregationCircuitBn256>::read(reader)
+//             .expect("must read");
+//
+//     let path = std::path::Path::new("./proof.proof");
+//     let file = std::fs::File::open(path).unwrap();
+//     let reader = std::io::BufReader::with_capacity(1 << 24, file);
+//
+//     use franklin_crypto::bellman::plonk::better_better_cs::proof::Proof as NewProof;
+//     let proof =
+//         NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(reader).expect("must read");
+//
+//     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
+//     let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+//     let transcript_params = (&rescue_params, &rns_params);
+//
+//     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
+//
+//     let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
+//         &vk_for_recursive_circut,
+//         &proof,
+//         Some(transcript_params),
+//     )
+//     .expect("must perform verification");
+//
+//     assert!(is_valid);
+// }
 
 #[test]
 fn simulate_many_proofs() {
@@ -449,13 +520,13 @@ fn simulate_many_proofs() {
 
     let mut circuits = vec![];
     for num_steps in vec![18, 40, 25, 35].into_iter() {
-        let circuit = BenchmarkCircuitWithOneInput::<Bn256> {
+        let circuit = TestCircuitWithOneInput::new(BenchmarkCircuitWithOneInput::<Bn256> {
             num_steps,
             a,
             b,
             output: fibbonacci(&a, &b, num_steps),
             _engine_marker: std::marker::PhantomData,
-        };
+        });
 
         circuits.push(circuit);
     }
@@ -489,7 +560,7 @@ fn simulate_many_proofs() {
         proofs.push(proof);
     }
 
-    let num_inputs = 1;
+    let num_inputs = 2;
     let tree_depth = 3;
 
     let num_proofs_to_check = 2;
@@ -536,13 +607,13 @@ fn test_all_aggregated_proofs() {
         for i in diff_input_b {
             let a = Fr::from_str(&i.to_string()).unwrap();
             let b = Fr::one();
-            let circuit = BenchmarkCircuitWithOneInput::<Bn256> {
+            let circuit = TestCircuitWithOneInput::new(BenchmarkCircuitWithOneInput::<Bn256> {
                 num_steps,
                 a,
                 b,
                 output: fibbonacci(&a, &b, num_steps),
                 _engine_marker: std::marker::PhantomData,
-            };
+            });
 
             circuits.push(circuit);
         }
@@ -579,7 +650,7 @@ fn test_all_aggregated_proofs() {
         proofs.push(proof);
     }
 
-    let num_inputs = 1;
+    let num_inputs = 2;
     let num_proofs_to_checks = vec![1, 4, 8, 18, 36];
     let crs_degrees = vec![22, 23, 24, 25, 26];
 
