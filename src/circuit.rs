@@ -1,29 +1,29 @@
 #![allow(dead_code)]
-
-use franklin_crypto::bellman::pairing::ff::*;
-use franklin_crypto::bellman::pairing::*;
-use franklin_crypto::bellman::plonk::better_better_cs::cs::*;
-use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, Width4MainGateWithDNext};
-use franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
-use franklin_crypto::bellman::plonk::better_cs::generator::make_non_residues;
-use franklin_crypto::bellman::plonk::better_cs::keys::{Proof, VerificationKey};
-use franklin_crypto::bellman::SynthesisError;
-use franklin_crypto::circuit::sponge::CircuitGenericSponge;
-use franklin_crypto::circuit::Assignment;
-use franklin_crypto::plonk::circuit::allocated_num::*;
-use franklin_crypto::plonk::circuit::bigint::field::*;
-use franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
-use franklin_crypto::plonk::circuit::boolean::*;
-use franklin_crypto::plonk::circuit::rescue::*;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::*;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::*;
-use franklin_crypto::plonk::circuit::verifier_circuit::channel::*;
-use franklin_crypto::plonk::circuit::verifier_circuit::data_structs::*;
-use franklin_crypto::plonk::circuit::verifier_circuit::verifying_circuit::aggregate_proof;
-use franklin_crypto::poseidon::params::PoseidonParams;
-use franklin_crypto::rescue::{RescueEngine, RescueHashParams};
+use advanced_circuit_component::franklin_crypto::bellman::pairing::ff::*;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::*;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::*;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::generator::make_non_residues;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::keys::{Proof, VerificationKey};
+use advanced_circuit_component::franklin_crypto::bellman::SynthesisError;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::allocated_num::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::Assignment;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::field::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::boolean::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::custom_rescue_gate::Rescue5CustomGate;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::rescue::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::*;
+use advanced_circuit_component::franklin_crypto::rescue::{RescueEngine, RescueHashParams};
+use advanced_circuit_component::recursion::transcript::TranscriptGadget;
+use advanced_circuit_component::rescue_poseidon::{CircuitGenericSponge, PoseidonParams};
 
 use crate::utils::bytes_to_keep;
+use crate::witness::DefaultRescueParams;
 
 pub const ZKLINK_NUM_INPUTS: usize = 1;
 pub const ALLIGN_FIELD_ELEMENTS_TO_BITS: usize = 256;
@@ -35,7 +35,7 @@ pub struct RecursiveAggregationCircuit<
     P: OldCSParams<E>,
     WP: WrappedAffinePoint<'a, E>,
     AD: AuxData<E>,
-    T: ChannelGadget<E>,
+    T: TranscriptGadget<E>,
 > {
     pub num_proofs_to_check: usize,
     pub num_inputs: usize,
@@ -45,7 +45,7 @@ pub struct RecursiveAggregationCircuit<
     pub vk_auth_paths: Option<Vec<Vec<E::Fr>>>,
     pub proof_ids: Option<Vec<usize>>,
     pub proofs: Option<Vec<Proof<E, P>>>,
-    pub rescue_params: &'a E::Params,
+    pub rescue_params: &'a DefaultRescueParams<E>,
     pub rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     pub aux_data: AD,
     pub transcript_params: &'a T::Params,
@@ -64,9 +64,9 @@ where
     P: OldCSParams<E>,
     WP: WrappedAffinePoint<'a, E>,
     AD: AuxData<E>,
-    T: ChannelGadget<E>,
+    T: TranscriptGadget<E>,
 {
-    type MainGate = Width4MainGateWithDNext;
+    type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         let num_bits_in_proof_id = self.vk_tree_depth;
@@ -178,17 +178,14 @@ where
         // proofs and verification keys are allocated, not proceed with aggregation
 
         // first get that FS scalar
-
-        let mut sponge = StatefulRescueGadget::<E>::new(self.rescue_params);
-
+        let mut sponge = CircuitGenericSponge::<E, 2, 3>::new();
         for w in fs_witnesses.into_iter() {
-            sponge.absorb_single_value(cs, w, self.rescue_params)?;
+            sponge.absorb(cs, w, self.rescue_params)?;
         }
-
-        sponge.pad_if_necessary(self.rescue_params)?;
-
+        sponge.pad_if_necessary();
         let aggregation_challenge = sponge
-            .squeeze_out_single(cs, self.rescue_params)?
+            .squeeze(cs, self.rescue_params)?
+            .expect("Must squeeze aggregation_challenge")
             .into_allocated_num(cs)?;
 
         // then perform individual aggregation
@@ -200,7 +197,7 @@ where
             let proof = &proof_witnesses[proof_idx];
             let vk = &vk_witnesses[proof_idx];
 
-            let [pair_with_generator, pair_with_x] = aggregate_proof::<_, _, T, CS::Params, P, _, _>(
+            let [pair_with_generator, pair_with_x] = crate::aggregation::aggregate_proof::<_, _, T, CS::Params, _, _>(
                 cs,
                 self.transcript_params,
                 &proof.input_values,
@@ -298,7 +295,7 @@ where
                     .as_ref()
                     .map(|el| E::Fr::from_str(&el[proof_index].to_string()).unwrap());
                 let path_allocated = AllocatedNum::alloc(cs, || Ok(*path_witness.get()?))?;
-                key_ids.push(path_allocated.clone());
+                key_ids.push(path_allocated);
 
                 let path_bits = path_allocated.into_bits_le(cs, Some(num_bits_in_proof_id))?;
 
@@ -368,10 +365,12 @@ where
 
         Ok(())
     }
+
     fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
         Ok(vec![
-            Self::MainGate::default().into_internal(),
-            TwoBitDecompositionRangecheckCustomGate::default().into_internal(),
+            SelectorOptimizedWidth4MainGateWithDNext.into_internal(),
+            TwoBitDecompositionRangecheckCustomGate.into_internal(),
+            Rescue5CustomGate.into_internal(),
         ])
     }
 }
@@ -463,42 +462,30 @@ fn point_into_num<'a, E: Engine, CS: ConstraintSystem<E>, WP: WrappedAffinePoint
 fn rescue_leaf_hash<E: RescueEngine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     leaf: &[AllocatedNum<E>],
-    params: &E::Params,
-) -> Result<AllocatedNum<E>, SynthesisError>
-where
-    <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox0: PlonkCsSBox<E>,
-    <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox1: PlonkCsSBox<E>,
-{
-    let mut rescue_gadget = StatefulRescueGadget::<E>::new(params);
+    params: &DefaultRescueParams<E>,
+) -> Result<AllocatedNum<E>, SynthesisError> {
+    let leaf = leaf.iter().copied().map(Num::Variable).collect::<Vec<_>>();
+    let output = CircuitGenericSponge::hash(cs, &leaf, params, None)?[0]
+        .clone()
+        .into_allocated_num(cs)?;
 
-    rescue_gadget.specizalize(leaf.len() as u8);
-    rescue_gadget.absorb(cs, leaf, params)?;
-
-    let output = rescue_gadget.squeeze_out_single(cs, params)?;
-
-    let as_num = output.into_allocated_num(cs)?;
-
-    Ok(as_num)
+    Ok(output)
 }
 
 fn rescue_node_hash<E: RescueEngine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     left: AllocatedNum<E>,
     right: AllocatedNum<E>,
-    params: &E::Params,
-) -> Result<AllocatedNum<E>, SynthesisError>
-where
-    <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox0: PlonkCsSBox<E>,
-    <<E as RescueEngine>::Params as RescueHashParams<E>>::SBox1: PlonkCsSBox<E>,
-{
-    let mut rescue_gadget = StatefulRescueGadget::<E>::new(params);
+    params: &DefaultRescueParams<E>,
+) -> Result<AllocatedNum<E>, SynthesisError> {
+    let output = CircuitGenericSponge::hash(
+        cs,
+        &[Num::Variable(left), Num::Variable(right)],
+        params,
+        None
+    )?[0]
+        .clone()
+        .into_allocated_num(cs)?;
 
-    rescue_gadget.specizalize(2);
-    rescue_gadget.absorb(cs, &[left, right], params)?;
-
-    let output = rescue_gadget.squeeze_out_single(cs, params)?;
-
-    let as_num = output.into_allocated_num(cs)?;
-
-    Ok(as_num)
+    Ok(output)
 }

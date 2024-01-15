@@ -6,10 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-franklin-crypto = { git = "https://github.com/zkLinkProtocol/franklin-crypto.git", branch = "better_better_cs_poseidon", features = [
-  "multicore",
-  "plonk",
-] }
+advanced_circuit_component = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component", branch = "main" }
 hex = "*"
 once_cell = "*"
 sha2 = "0.10.2"

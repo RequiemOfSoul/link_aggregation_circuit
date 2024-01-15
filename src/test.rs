@@ -1,40 +1,34 @@
-use franklin_crypto::bellman::{kate_commitment::*, SynthesisError, ScalarEngine};
-use franklin_crypto::bellman::pairing::{CurveAffine, Engine};
-use franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
-use franklin_crypto::bellman::pairing::ff::Field;
-use franklin_crypto::bellman::plonk::better_better_cs::cs::{
-    Circuit, TrivialAssembly, Width4MainGateWithDNext,
-};
-use franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey as NewVerificationKey;
-use franklin_crypto::bellman::plonk::better_cs;
-use franklin_crypto::bellman::plonk::better_cs::cs::{Circuit as OldCircuit, ConstraintSystem as OldConstraintSystem};
-use franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams as OldActualParams;
-use franklin_crypto::bellman::plonk::better_cs::generator::GeneratorAssembly4WithNextStep as OldActualAssembly;
-use franklin_crypto::bellman::plonk::better_cs::keys::{
+use advanced_circuit_component::franklin_crypto::bellman::{kate_commitment::*, SynthesisError, ScalarEngine};
+use advanced_circuit_component::franklin_crypto::bellman::pairing::{CurveAffine, Engine};
+use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
+use advanced_circuit_component::franklin_crypto::bellman::pairing::ff::Field;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, TrivialAssembly};
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey as NewVerificationKey;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::{Circuit as OldCircuit, ConstraintSystem as OldConstraintSystem};
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams as OldActualParams;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::generator::GeneratorAssembly4WithNextStep as OldActualAssembly;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::keys::{
     Proof, SetupPolynomialsPrecomputations, VerificationKey,
 };
-use franklin_crypto::bellman::plonk::better_cs::prover::ProverAssembly4WithNextStep as OldActualProver;
-use franklin_crypto::bellman::plonk::better_cs::verifier::verify_and_aggregate;
-use franklin_crypto::bellman::plonk::commitments::transcript::*;
-use franklin_crypto::bellman::plonk::commitments::transcript::Transcript;
-use franklin_crypto::bellman::plonk::fft::cooley_tukey_ntt::*;
-use franklin_crypto::bellman::PrimeField;
-use franklin_crypto::bellman::worker::*;
-use franklin_crypto::plonk::circuit::*;
-use franklin_crypto::plonk::circuit::bigint::field::*;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{AuxData, BN256AuxData};
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::*;
-use franklin_crypto::plonk::circuit::verifier_circuit::channel::RescueChannelGadget;
-use franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
-use franklin_crypto::plonk::circuit::verifier_circuit::test::*;
-use franklin_crypto::rescue::bn256::*;
-use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::prover::ProverAssembly4WithNextStep as OldActualProver;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::verifier::verify_and_aggregate;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::commitments::transcript::*;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::commitments::transcript::Transcript;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::fft::cooley_tukey_ntt::*;
+use advanced_circuit_component::franklin_crypto::bellman::PrimeField;
+use advanced_circuit_component::franklin_crypto::bellman::worker::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::field::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{AuxData, BN256AuxData};
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::test::*;
+use advanced_circuit_component::utils::bn254_rescue_params;
 
 use crate::vks_tree::make_vks_tree;
-use crate::witness::{
-    create_recursive_circuit_vk_and_setup, make_aggregate, make_public_input_and_limbed_aggregate,
-    proof_recursive_aggregate_for_zklink, RecursiveAggregationCircuitBn256,
-};
+use crate::witness::{create_recursive_circuit_vk_and_setup, make_aggregate, make_public_input_and_limbed_aggregate, proof_recursive_aggregate_for_zklink, RecursiveAggregationCircuitBn256, RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion};
 
 use super::circuit::*;
 
@@ -125,14 +119,13 @@ fn test_two_proofs() {
     });
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
-
+    let rescue_params = bn254_rescue_params();
     let transcript_params = (&rescue_params, &rns_params);
 
     let (vk_0, proof_0) =
-        make_vk_and_proof::<Bn256, RescueTranscriptForRNS<Bn256>>(circuit_0, transcript_params);
+        make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(circuit_0, transcript_params);
     let (vk_1, proof_1) =
-        make_vk_and_proof::<Bn256, RescueTranscriptForRNS<Bn256>>(circuit_1, transcript_params);
+        make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(circuit_1, transcript_params);
 
     let worker = Worker::new();
     let crs_mons = Crs::<Bn256, CrsForMonomialForm>::crs_42(32, &worker);
@@ -195,7 +188,7 @@ fn test_two_proofs() {
         OldActualParams,
         WrapperUnchecked<Bn256>,
         _,
-        RescueChannelGadget<Bn256>,
+        RescueTranscriptGadgetForRecursion<Bn256>,
     > {
         num_proofs_to_check: 2,
         num_inputs: 4,
@@ -217,7 +210,7 @@ fn test_two_proofs() {
         price_commitments: Some(price_commitments),
     };
 
-    let mut cs = TrivialAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+    let mut cs = TrivialAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
     recursive_circuit
         .synthesize(&mut cs)
         .expect("should synthesize");
@@ -295,20 +288,25 @@ fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(
     (verification_key, proof)
 }
 
-fn open_crs_for_log2_of_size(n: usize) -> Crs<Bn256, CrsForMonomialForm> {
-    let base_path_str = std::env::var("RUNTIME_CONFIG_KEY_DIR").unwrap();
-    let base_path = std::path::Path::new(&base_path_str);
-    let full_path = base_path.join(format!("setup_2^{}.key", n));
-    println!("Opening {}", full_path.to_string_lossy());
-    let file = std::fs::File::open(full_path).unwrap();
-    let reader = std::io::BufReader::with_capacity(1 << n, file);
+fn open_crs_for_log2_of_size<const ENABLE_TEST: bool>(n: usize) -> Crs<Bn256, CrsForMonomialForm> {
+    if ENABLE_TEST {
+        let worker = Worker::new();
+        Crs::<Bn256, CrsForMonomialForm>::crs_42(2usize.pow(n as u32), &worker)
+    } else {
+        let base_path_str = std::env::var("RUNTIME_CONFIG_KEY_DIR").unwrap();
+        let base_path = std::path::Path::new(&base_path_str);
+        let full_path = base_path.join(format!("setup_2^{}.key", n));
+        println!("Opening {}", full_path.to_string_lossy());
+        let file = std::fs::File::open(full_path).unwrap();
+        let reader = std::io::BufReader::with_capacity(1 << n, file);
 
-    Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap()
+        Crs::<Bn256, CrsForMonomialForm>::read(reader).unwrap()
+    }
 }
 
 #[test]
 fn create_vk() {
-    let crs = open_crs_for_log2_of_size(22);
+    let crs = open_crs_for_log2_of_size::<true>(22);
 
     // let size = 1 << 22;
     // let worker = Worker::new();
@@ -338,7 +336,7 @@ fn make_vk_and_proof_for_crs<E: Engine, T: Transcript<E::Fr>>(
     let verification_key =
         VerificationKey::from_setup(&setup, &worker, crs).expect("should create vk");
 
-    let proof = franklin_crypto::bellman::plonk::prove_native_by_steps::<E, _, T>(
+    let proof = advanced_circuit_component::franklin_crypto::bellman::plonk::prove_native_by_steps::<E, _, T>(
         &circuit,
         &setup,
         None,
@@ -375,26 +373,26 @@ fn simulate_zklink_proofs() {
     }
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+    let rescue_params = bn254_rescue_params();
 
     let transcript_params = (&rescue_params, &rns_params);
 
-    let crs = open_crs_for_log2_of_size(24);
+    let crs = open_crs_for_log2_of_size::<true>(24);
 
     let mut vks = vec![];
     let mut proofs = vec![];
 
     for circuit in circuits.into_iter() {
-        let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRNS<Bn256>>(
+        let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRecursion<Bn256>>(
             circuit,
             transcript_params,
             &crs,
         );
 
-        let valid = franklin_crypto::bellman::plonk::better_cs::verifier::verify::<
+        let valid = better_cs::verifier::verify::<
             _,
             _,
-            RescueTranscriptForRNS<Bn256>,
+            RescueTranscriptForRecursion<Bn256>,
         >(&proof, &vk, Some(transcript_params))
         .expect("must verify");
         assert!(valid);
@@ -430,9 +428,8 @@ fn simulate_zklink_proofs() {
     )
     .expect("must check if satisfied and make a proof");
 
-    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
-
-    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
+    use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
+    let is_valid = verify::<_, _, RescueTranscriptForRecursion<Bn256>>(
         &vk_for_recursive_circut,
         &proof,
         Some(transcript_params),
@@ -469,7 +466,7 @@ fn simulate_zklink_proofs() {
     let mut tmp = vec![];
     proof.write(&mut tmp).expect("must write");
 
-    use franklin_crypto::bellman::plonk::better_better_cs::proof::Proof as NewProof;
+    use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::proof::Proof as NewProof;
     let proof_deser =
         NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(&tmp[..]).expect("must read");
 
@@ -498,12 +495,12 @@ fn simulate_zklink_proofs() {
 //         NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(reader).expect("must read");
 //
 //     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-//     let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+//     let rescue_params = bn254_rescue_params();
 //     let transcript_params = (&rescue_params, &rns_params);
 //
 //     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 //
-//     let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
+//     let is_valid = verify::<_, _, RescueTranscriptForRecursion<Bn256>>(
 //         &vk_for_recursive_circut,
 //         &proof,
 //         Some(transcript_params),
@@ -532,26 +529,26 @@ fn simulate_many_proofs() {
     }
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+    let rescue_params = bn254_rescue_params();
 
     let transcript_params = (&rescue_params, &rns_params);
 
-    let crs = open_crs_for_log2_of_size(24);
+    let crs = open_crs_for_log2_of_size::<true>(24);
 
     let mut vks = vec![];
     let mut proofs = vec![];
 
     for circuit in circuits.into_iter() {
-        let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRNS<Bn256>>(
+        let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRecursion<Bn256>>(
             circuit,
             transcript_params,
             &crs,
         );
 
-        let valid = franklin_crypto::bellman::plonk::better_cs::verifier::verify::<
+        let valid = better_cs::verifier::verify::<
             _,
             _,
-            RescueTranscriptForRNS<Bn256>,
+            RescueTranscriptForRecursion<Bn256>,
         >(&proof, &vk, Some(transcript_params))
         .expect("must verify");
         assert!(valid);
@@ -620,23 +617,23 @@ fn test_all_aggregated_proofs() {
     }
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+    let rescue_params = bn254_rescue_params();
 
     let transcript_params = (&rescue_params, &rns_params);
 
-    let crs = open_crs_for_log2_of_size(20);
+    let crs = open_crs_for_log2_of_size::<true>(20);
 
     let mut vks = vec![];
     let mut proofs = vec![];
 
     for (index, circuit) in circuits.into_iter().enumerate() {
-        let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRNS<Bn256>>(
+        let (vk, proof) = make_vk_and_proof_for_crs::<Bn256, RescueTranscriptForRecursion<Bn256>>(
             circuit,
             transcript_params,
             &crs,
         );
 
-        let valid = better_cs::verifier::verify::<_, _, RescueTranscriptForRNS<Bn256>>(
+        let valid = better_cs::verifier::verify::<_, _, RescueTranscriptForRecursion<Bn256>>(
             &proof,
             &vk,
             Some(transcript_params),
@@ -660,7 +657,7 @@ fn test_all_aggregated_proofs() {
             "Creating [proofs_num:{}, crs_degree:{}] setup and verification key",
             aggregated_proofs_num, crs_degree
         );
-        let crs = open_crs_for_log2_of_size(crs_degree);
+        let crs = open_crs_for_log2_of_size::<true>(crs_degree);
         let (vk_for_recursive_circuit, setup) = create_recursive_circuit_vk_and_setup(
             aggregated_proofs_num,
             num_inputs,

@@ -1,26 +1,25 @@
-use franklin_crypto::bellman::bn256::Bn256;
-use franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError, ScalarEngine};
-use franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
-use franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, ProvingAssembly, SetupAssembly, TrivialAssembly, Width4MainGateWithDNext};
-use franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams;
-use franklin_crypto::bellman::plonk::better_cs::keys::{Proof, VerificationKey};
-use franklin_crypto::bellman::worker::Worker;
-use franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{AuxData, BN256AuxData};
-use franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
-use franklin_crypto::plonk::circuit::verifier_circuit::channel::RescueChannelGadget;
-use franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
-use franklin_crypto::plonk::circuit::Width4WithCustomGates;
-use franklin_crypto::poseidon::params::PoseidonParams;
-use franklin_crypto::poseidon::sponge::GenericSponge;
-use franklin_crypto::rescue::rescue_transcript::RescueTranscriptForRNS;
-use franklin_crypto::rescue::{RescueEngine, StatefulRescue};
-use franklin_crypto::rescue::bn256::Bn256RescueParams;
-use franklin_crypto::bellman::plonk::better_better_cs::{
+use advanced_circuit_component::franklin_crypto::bellman::bn256::Bn256;
+use advanced_circuit_component::franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError, ScalarEngine};
+use advanced_circuit_component::franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, ProvingAssembly, SetupAssembly, TrivialAssembly};
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::PlonkCsWidth4WithNextStepParams;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::keys::{Proof, VerificationKey};
+use advanced_circuit_component::franklin_crypto::bellman::worker::Worker;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{AuxData, BN256AuxData};
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::WrapperUnchecked;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::Width4WithCustomGates;
+use advanced_circuit_component::franklin_crypto::rescue::RescueEngine;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::{
     setup::{Setup as NewSetup, VerificationKey as NewVerificationKey},
     proof::Proof as NewProof
 };
-use franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
+use advanced_circuit_component::rescue_poseidon::{GenericSponge, PoseidonParams, RescueParams};
+use advanced_circuit_component::recursion::transcript::{GenericTranscriptForRNSInFieldOnly, GenericTranscriptGadget};
+use advanced_circuit_component::utils::bn254_rescue_params;
 use crate::circuit::{RecursiveAggregationCircuit, ZKLINK_NUM_INPUTS};
 use crate::vks_tree::{create_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
 
@@ -30,43 +29,49 @@ pub type RecursiveAggregationCircuitBn256<'a> = RecursiveAggregationCircuit<
     PlonkCsWidth4WithNextStepParams,
     WrapperUnchecked<'a, Bn256>,
     BN256AuxData,
-    RescueChannelGadget<Bn256>,
+    RescueTranscriptGadgetForRecursion<Bn256>,
 >;
+pub type DefaultRescueParams<E> = RescueParams<E, 2, 3>;
+pub type RescueTranscriptForRecursion<'a, E> =
+    GenericTranscriptForRNSInFieldOnly<'a, E, RescueParams<E, 2, 3>, 2, 3>;
+pub type RescueTranscriptGadgetForRecursion<E> =
+    GenericTranscriptGadget<E, RescueParams<E, 2, 3>, 2, 3>;
 
 pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
     proofs: &[Proof<E, P>],
     vks: &[VerificationKey<E, P>],
-    params: &'a E::Params,
+    params: &'a DefaultRescueParams<E>,
     rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) -> Result<[E::G1Affine; 2], SynthesisError> {
-    use franklin_crypto::bellman::plonk::better_cs::verifier::verify_and_aggregate;
-
     assert_eq!(
         proofs.len(),
         vks.len(),
         "number of proofs is not equal to number of VKs"
     );
 
-    let mut channel = StatefulRescue::<E>::new(params);
+    let mut channel = GenericSponge::<E, 2, 3>::new();
     for p in proofs.iter() {
         let as_fe = p.into_witness_for_params(rns_params)?;
 
         for fe in as_fe.into_iter() {
-            channel.absorb_single_value(fe);
+            channel.absorb(fe, params);
         }
     }
-
     channel.pad_if_necessary();
+    let aggregation_challenge = channel.squeeze(params).unwrap();
 
-    let aggregation_challenge: E::Fr = channel.squeeze_out_single();
-
-    let mut pair_with_generator = E::G1::zero();
-    let mut pair_with_x = E::G1::zero();
+    let mut pair_with_generator = <E::G1 as CurveProjective>::zero();
+    let mut pair_with_x = <E::G1 as CurveProjective>::zero();
 
     let mut current = aggregation_challenge;
 
+    use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::verifier::verify_and_aggregate;
     for (vk, proof) in vks.iter().zip(proofs.iter()) {
-        let (is_valid, [for_gen, for_x]) = verify_and_aggregate::<_, _, RescueTranscriptForRNS<E>>(
+        let (is_valid, [for_gen, for_x]) = verify_and_aggregate::<
+            _,
+            _,
+            GenericTranscriptForRNSInFieldOnly<E, DefaultRescueParams<E>, 2, 3>
+        >(
             proof,
             vk,
             Some((params, rns_params)),
@@ -76,16 +81,16 @@ pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
         assert!(is_valid, "individual proof is not valid");
 
         let contribution = for_gen.mul(current.into_repr());
-        pair_with_generator.add_assign(&contribution);
+        CurveProjective::add_assign(&mut pair_with_generator, &contribution);
 
         let contribution = for_x.mul(current.into_repr());
-        pair_with_x.add_assign(&contribution);
+        CurveProjective::add_assign(&mut pair_with_x, &contribution);
 
         current.mul_assign(&aggregation_challenge);
     }
 
-    let pair_with_generator = pair_with_generator.into_affine();
-    let pair_with_x = pair_with_x.into_affine();
+    let pair_with_generator = CurveProjective::into_affine(&pair_with_generator);
+    let pair_with_x = CurveProjective::into_affine(&pair_with_x);
 
     assert!(!pair_with_generator.is_zero());
     assert!(!pair_with_x.is_zero());
@@ -203,7 +208,7 @@ fn decompose_point_into_limbs<E: Engine>(
     dst: &mut Vec<E::Fr>,
     params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) {
-    use franklin_crypto::plonk::circuit::verifier_circuit::utils::{self};
+    use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::utils::{self};
 
     let mut new_params = params.clone();
     new_params.set_prefer_single_limb_allocation(true);
@@ -219,10 +224,10 @@ pub fn create_recursive_circuit_setup<'a>(
     vk_tree_depth: usize,
 ) -> Result<NewSetup<Bn256, RecursiveAggregationCircuitBn256<'a>>, SynthesisError> {
     let mut assembly =
-        SetupAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        SetupAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = Bn256RescueParams::new_checked_2_into_1();
+    let rescue_params = bn254_rescue_params();
     let aux_data = BN256AuxData::new();
 
     // let transcript_params = (&rescue_params, &rns_params);
@@ -249,11 +254,9 @@ pub fn create_recursive_circuit_setup<'a>(
     };
 
     recursive_circuit.synthesize(&mut assembly)?;
-
-    use franklin_crypto::bellman::worker::*;
-    let worker = Worker::new();
-
     assembly.finalize();
+
+    let worker = Worker::new();
     let setup = assembly.create_setup(&worker)?;
 
     Ok(setup)
@@ -268,7 +271,6 @@ pub fn create_recursive_circuit_vk_and_setup<'a>(
     vk_tree_depth: usize,
     crs: &Crs<Bn256, CrsForMonomialForm>,
 ) -> Result<NewVKAndSetUp<'a>, SynthesisError> {
-    use franklin_crypto::bellman::worker::*;
     let worker = Worker::new();
 
     let setup = create_recursive_circuit_setup(num_proofs_to_check, num_inputs, vk_tree_depth)?;
@@ -467,7 +469,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     if quick_check_if_satisifed {
         println!("Checking if satisfied");
         let mut assembly =
-            TrivialAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+            TrivialAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
         recursive_circuit_with_witness
             .synthesize(&mut assembly)
             .expect("must synthesize");
@@ -485,7 +487,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     }
 
     let mut assembly =
-        ProvingAssembly::<Bn256, Width4WithCustomGates, Width4MainGateWithDNext>::new();
+        ProvingAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
     recursive_circuit_with_witness
         .synthesize(&mut assembly)
         .expect("must synthesize");
@@ -493,7 +495,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
     let transcript_params = (rescue_params, rns_params);
     let timer = std::time::Instant::now();
-    let proof = assembly.create_proof::<_, RescueTranscriptForRNS<Bn256>>(
+    let proof = assembly.create_proof::<_, RescueTranscriptForRecursion<Bn256>>(
         worker,
         recursive_circuit_setup,
         crs,
@@ -510,9 +512,9 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         "expected input is not equal to one in a circuit"
     );
 
-    use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
+    use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
 
-    let is_valid = verify::<_, _, RescueTranscriptForRNS<Bn256>>(
+    let is_valid = verify::<_, _, RescueTranscriptForRecursion<Bn256>>(
         recursive_circuit_vk,
         &proof,
         Some(transcript_params),
