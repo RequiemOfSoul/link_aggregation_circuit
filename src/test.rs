@@ -20,14 +20,12 @@ use advanced_circuit_component::franklin_crypto::bellman::plonk::fft::cooley_tuk
 use advanced_circuit_component::franklin_crypto::bellman::PrimeField;
 use advanced_circuit_component::franklin_crypto::bellman::worker::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::*;
-use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::field::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::{AuxData, BN256AuxData};
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::without_flag_unchecked::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::test::*;
-use advanced_circuit_component::utils::bn254_rescue_params;
 
-use crate::vks_tree::make_vks_tree;
+use crate::vks_tree::{make_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
 use crate::witness::{
     create_recursive_circuit_vk_and_setup, make_aggregate, make_public_input_and_limbed_aggregate,
     proof_recursive_aggregate_for_zklink, RecursiveAggregationCircuitBn256,
@@ -122,8 +120,8 @@ fn test_two_proofs() {
         _engine_marker: std::marker::PhantomData,
     });
 
-    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = bn254_rescue_params();
+    let rns_params = RNS_PARAMETERS.clone();
+    let rescue_params = RESCUE_PARAMETERS.clone();
     let transcript_params = (&rescue_params, &rns_params);
 
     let (vk_0, proof_0) = make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(
@@ -384,9 +382,8 @@ fn simulate_zklink_proofs() {
         circuits.push(circuit);
     }
 
-    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = bn254_rescue_params();
-
+    let rns_params = RNS_PARAMETERS.clone();
+    let rescue_params = RESCUE_PARAMETERS.clone();
     let transcript_params = (&rescue_params, &rns_params);
 
     let crs = open_crs_for_log2_of_size::<true>(24);
@@ -506,8 +503,8 @@ fn simulate_zklink_proofs() {
 //     let proof =
 //         NewProof::<Bn256, RecursiveAggregationCircuitBn256>::read(reader).expect("must read");
 //
-//     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-//     let rescue_params = bn254_rescue_params();
+//     let rns_params = RNS_PARAMETERS.clone();
+//     let rescue_params = RESCUE_PARAMETERS.clone();
 //     let transcript_params = (&rescue_params, &rns_params);
 //
 //     use franklin_crypto::bellman::plonk::better_better_cs::verifier::verify;
@@ -540,9 +537,8 @@ fn simulate_many_proofs() {
         circuits.push(circuit);
     }
 
-    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = bn254_rescue_params();
-
+    let rns_params = RNS_PARAMETERS.clone();
+    let rescue_params = RESCUE_PARAMETERS.clone();
     let transcript_params = (&rescue_params, &rns_params);
 
     let crs = open_crs_for_log2_of_size::<true>(24);
@@ -628,9 +624,8 @@ fn test_all_aggregated_proofs() {
         }
     }
 
-    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = bn254_rescue_params();
-
+    let rns_params = RNS_PARAMETERS.clone();
+    let rescue_params = RESCUE_PARAMETERS.clone();
     let transcript_params = (&rescue_params, &rns_params);
 
     let crs = open_crs_for_log2_of_size::<true>(20);

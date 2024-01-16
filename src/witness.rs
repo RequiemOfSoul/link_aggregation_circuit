@@ -19,7 +19,6 @@ use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_c
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
 use advanced_circuit_component::rescue_poseidon::{GenericSponge, PoseidonParams, RescueParams};
 use advanced_circuit_component::recursion::transcript::{GenericTranscriptForRNSInFieldOnly, GenericTranscriptGadget};
-use advanced_circuit_component::utils::bn254_rescue_params;
 use crate::circuit::{RecursiveAggregationCircuit, ZKLINK_NUM_INPUTS};
 use crate::vks_tree::{create_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
 
@@ -227,12 +226,6 @@ pub fn create_recursive_circuit_setup<'a>(
         SelectorOptimizedWidth4MainGateWithDNext,
     >::new();
 
-    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = bn254_rescue_params();
-    let aux_data = BN256AuxData::new();
-
-    // let transcript_params = (&rescue_params, &rns_params);
-
     let recursive_circuit = RecursiveAggregationCircuitBn256 {
         num_proofs_to_check,
         num_inputs,
@@ -242,10 +235,10 @@ pub fn create_recursive_circuit_setup<'a>(
         vk_auth_paths: None,
         proof_ids: None,
         proofs: None,
-        rescue_params: &rescue_params,
-        rns_params: &rns_params,
-        aux_data,
-        transcript_params: &rescue_params,
+        rescue_params: &RESCUE_PARAMETERS,
+        rns_params: &RNS_PARAMETERS,
+        aux_data: BN256AuxData::new(),
+        transcript_params: &RESCUE_PARAMETERS,
 
         g2_elements: None,
 

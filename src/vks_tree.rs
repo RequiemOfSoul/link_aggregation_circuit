@@ -113,10 +113,7 @@ pub fn create_vks_tree(
     let mut padded = vks.to_vec();
     padded.resize(max_size, vks.last().unwrap().clone());
 
-    let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
-    let rescue_params = bn254_rescue_params();
-
-    let (tree, witness) = make_vks_tree(&padded, &rescue_params, &rns_params);
+    let (tree, witness) = make_vks_tree(&padded, &RESCUE_PARAMETERS, &RNS_PARAMETERS);
 
     Ok((max_valid_idx, (tree, witness)))
 }
