@@ -28,7 +28,7 @@ use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circui
 use crate::vks_tree::{make_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
 use crate::witness::{
     create_recursive_circuit_vk_and_setup, make_aggregate, make_public_input_and_limbed_aggregate,
-    proof_recursive_aggregate_for_zklink, RecursiveAggregationCircuitBn256,
+    proof_recursive_aggregate_for_zklink, BlockPublicInputData, RecursiveAggregationCircuitBn256,
     RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion,
 };
 
@@ -96,8 +96,58 @@ impl<E: Engine> OldCircuit<E, OldActualParams> for TestCircuit<E> {
     }
 }
 
-#[test]
-fn test_two_proofs() {
+fn make_vk_and_proof_for_crs<E: Engine, T: Transcript<E::Fr>>(
+    circuit: TestCircuitWithOneInput<E>,
+    transcript_params: <T as Prng<E::Fr>>::InitializationParameters,
+    crs: &Crs<E, CrsForMonomialForm>,
+) -> (
+    VerificationKey<E, OldActualParams>,
+    Proof<E, OldActualParams>,
+) {
+    let worker = Worker::new();
+    let mut assembly = OldActualAssembly::<E>::new();
+    circuit
+        .synthesize(&mut assembly)
+        .expect("should synthesize");
+    assembly.finalize();
+    let setup = assembly.setup(&worker).expect("should setup");
+
+    let verification_key =
+        VerificationKey::from_setup(&setup, &worker, crs).expect("should create vk");
+
+    let proof = advanced_circuit_component::franklin_crypto::bellman::plonk::prove_native_by_steps::<E, _, T>(
+        &circuit,
+        &setup,
+        None,
+        crs,
+        Some(transcript_params.clone()),
+    )
+        .expect("should create a proof");
+
+    let (is_valid, [_for_gen, _for_x]) =
+        verify_and_aggregate::<_, _, T>(&proof, &verification_key, Some(transcript_params))
+            .expect("should verify");
+
+    assert!(is_valid);
+
+    (verification_key, proof)
+}
+
+fn test_public_input_data(agg_block_num: usize) -> (Vec<BlockPublicInputData<Bn256>>, Fr) {
+    let data = BlockPublicInputData {
+        block_commitment: Fr::zero(),
+        price_commitment: Fr::one(),
+    };
+    let all_block_test_data = vec![data; agg_block_num];
+    let acc_price_commitment = all_block_test_data.iter().fold(Fr::zero(), |mut acc, el| {
+        acc.square();
+        acc.add_assign(&el.price_commitment);
+        acc
+    });
+    (all_block_test_data, acc_price_commitment)
+}
+
+pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn256<'static> {
     let a = Fr::one();
     let b = Fr::one();
 
@@ -120,9 +170,7 @@ fn test_two_proofs() {
         _engine_marker: std::marker::PhantomData,
     });
 
-    let rns_params = RNS_PARAMETERS.clone();
-    let rescue_params = RESCUE_PARAMETERS.clone();
-    let transcript_params = (&rescue_params, &rns_params);
+    let transcript_params = (&*RESCUE_PARAMETERS, &*RNS_PARAMETERS);
 
     let (vk_0, proof_0) = make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(
         circuit_0,
@@ -143,7 +191,8 @@ fn test_two_proofs() {
 
     let vks_in_tree = vec![vk_1.clone(), vk_0.clone()];
     // make in reverse
-    let (vks_tree, all_witness_values) = make_vks_tree(&vks_in_tree, &rescue_params, &rns_params);
+    let (vks_tree, all_witness_values) =
+        make_vks_tree(&vks_in_tree, &*RESCUE_PARAMETERS, &*RNS_PARAMETERS);
 
     let vks_tree_root = vks_tree.get_commitment();
 
@@ -154,7 +203,7 @@ fn test_two_proofs() {
         let vk = &vks_in_tree[proof_id];
 
         let leaf_values = vk
-            .into_witness_for_params(&rns_params)
+            .into_witness_for_params(&*RNS_PARAMETERS)
             .expect("must transform into limbed witness");
 
         let values_per_leaf = leaf_values.len();
@@ -170,26 +219,22 @@ fn test_two_proofs() {
     let aggregate = make_aggregate(
         &vec![proof_0.clone(), proof_1.clone()],
         &vec![vk_0.clone(), vk_1.clone()],
-        &rescue_params,
-        &rns_params,
+        &*RESCUE_PARAMETERS,
+        &*RNS_PARAMETERS,
     )
     .unwrap();
 
+    let (block_input_data, final_price_commitment) = test_public_input_data(2);
     let (_, _) = make_public_input_and_limbed_aggregate(
         vks_tree_root,
         &proof_ids,
         &vec![proof_0.clone(), proof_1.clone()],
         &aggregate,
-        &rns_params,
+        final_price_commitment,
+        &*RNS_PARAMETERS,
     );
 
-    let mut block_commitments = vec![];
-    let mut price_commitments = vec![];
-    for _ in 0..2 {
-        block_commitments.push(<Bn256 as ScalarEngine>::Fr::zero());
-        price_commitments.push(<Bn256 as ScalarEngine>::Fr::one());
-    }
-    let recursive_circuit = RecursiveAggregationCircuit::<
+    RecursiveAggregationCircuit::<
         Bn256,
         OldActualParams,
         WrapperUnchecked<Bn256>,
@@ -204,17 +249,21 @@ fn test_two_proofs() {
         vk_auth_paths: Some(queries),
         proof_ids: Some(proof_ids),
         proofs: Some(vec![proof_0, proof_1]),
-        rescue_params: &rescue_params,
-        rns_params: &rns_params,
+        rescue_params: &*RESCUE_PARAMETERS,
+        rns_params: &*RNS_PARAMETERS,
         aux_data,
-        transcript_params: &rescue_params,
+        transcript_params: &*RESCUE_PARAMETERS,
 
+        public_input_data: Some(block_input_data),
         g2_elements: Some(g2_bases),
 
         _m: std::marker::PhantomData,
-        block_commitments: Some(block_commitments),
-        price_commitments: Some(price_commitments),
-    };
+    }
+}
+
+#[test]
+fn test_two_proofs() {
+    let recursive_circuit = create_test_block_aggregation_circuit();
 
     let mut cs = TrivialAssembly::<
         Bn256,
@@ -228,7 +277,7 @@ fn test_two_proofs() {
     cs.finalize();
     println!("Padded number of gates: {}", cs.n());
     assert!(cs.is_satisfied());
-    assert_eq!(cs.num_inputs, 2);
+    assert_eq!(cs.num_inputs, 1);
 }
 
 fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(
@@ -317,51 +366,8 @@ fn open_crs_for_log2_of_size<const ENABLE_TEST: bool>(n: usize) -> Crs<Bn256, Cr
 #[test]
 fn create_vk() {
     let crs = open_crs_for_log2_of_size::<true>(22);
-
-    // let size = 1 << 22;
-    // let worker = Worker::new();
-    // let crs = Crs::<Bn256, CrsForMonomialForm>::crs_42(size, &worker);
-
     let (vk, _) = create_recursive_circuit_vk_and_setup(2, 1, 3, &crs).unwrap();
-
     dbg!(vk);
-}
-
-fn make_vk_and_proof_for_crs<E: Engine, T: Transcript<E::Fr>>(
-    circuit: TestCircuitWithOneInput<E>,
-    transcript_params: <T as Prng<E::Fr>>::InitializationParameters,
-    crs: &Crs<E, CrsForMonomialForm>,
-) -> (
-    VerificationKey<E, OldActualParams>,
-    Proof<E, OldActualParams>,
-) {
-    let worker = Worker::new();
-    let mut assembly = OldActualAssembly::<E>::new();
-    circuit
-        .synthesize(&mut assembly)
-        .expect("should synthesize");
-    assembly.finalize();
-    let setup = assembly.setup(&worker).expect("should setup");
-
-    let verification_key =
-        VerificationKey::from_setup(&setup, &worker, crs).expect("should create vk");
-
-    let proof = advanced_circuit_component::franklin_crypto::bellman::plonk::prove_native_by_steps::<E, _, T>(
-        &circuit,
-        &setup,
-        None,
-        crs,
-        Some(transcript_params.clone()),
-    )
-    .expect("should create a proof");
-
-    let (is_valid, [_for_gen, _for_x]) =
-        verify_and_aggregate::<_, _, T>(&proof, &verification_key, Some(transcript_params))
-            .expect("should verify");
-
-    assert!(is_valid);
-
-    (verification_key, proof)
 }
 
 #[test]
@@ -423,11 +429,13 @@ fn simulate_zklink_proofs() {
 
     let worker = Worker::new();
 
+    let (block_input_data, _final_price_commitment) = test_public_input_data(num_proofs_to_check);
     let proof = proof_recursive_aggregate_for_zklink(
         tree_depth,
         num_inputs,
         &vks,
         &proofs,
+        &block_input_data,
         &proofs_to_check,
         &vk_for_recursive_circut,
         &setup,
@@ -585,11 +593,13 @@ fn simulate_many_proofs() {
     let worker = Worker::new();
 
     println!("Creating proof");
+    let (block_input_data, _final_price_commitment) = test_public_input_data(num_proofs_to_check);
     let _ = proof_recursive_aggregate_for_zklink(
         tree_depth,
         num_inputs,
         &vks,
         &proofs_to_check,
+        &block_input_data,
         &proofs_indexes_to_check,
         &vk_for_recursive_circut,
         &setup,
@@ -683,11 +693,14 @@ fn test_all_aggregated_proofs() {
             "Creating [proofs_num:{}, crs_degree:{}] proof",
             aggregated_proofs_num, crs_degree
         );
+        let (block_input_data, _final_price_commitment) =
+            test_public_input_data(aggregated_proofs_num);
         let _ = proof_recursive_aggregate_for_zklink(
             TREE_DEPTH,
             num_inputs,
             &vks,
             aggregated_proofs,
+            &block_input_data,
             &aggregated_proofs_indexes,
             &vk_for_recursive_circuit,
             &setup,

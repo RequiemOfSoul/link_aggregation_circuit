@@ -23,7 +23,7 @@ use advanced_circuit_component::recursion::transcript::TranscriptGadget;
 use advanced_circuit_component::rescue_poseidon::{CircuitGenericSponge, PoseidonParams};
 
 use crate::utils::bytes_to_keep;
-use crate::witness::DefaultRescueParams;
+use crate::witness::{BlockPublicInputData, DefaultRescueParams};
 
 pub const ZKLINK_NUM_INPUTS: usize = 1;
 pub const ALLIGN_FIELD_ELEMENTS_TO_BITS: usize = 256;
@@ -49,8 +49,7 @@ pub struct RecursiveAggregationCircuit<
     pub rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     pub aux_data: AD,
     pub transcript_params: &'a T::Params,
-    pub block_commitments: Option<Vec<E::Fr>>,
-    pub price_commitments: Option<Vec<E::Fr>>,
+    pub public_input_data: Option<Vec<BlockPublicInputData<E>>>,
     pub g2_elements: Option<[E::G2Affine; 2]>,
 
     pub _m: std::marker::PhantomData<WP>,
@@ -263,8 +262,14 @@ where
         let mut final_price_commitment = Num::zero();
         let params = PoseidonParams::<E, 2, 3>::default();
         for idx in 0..self.num_proofs_to_check {
-            let block_commitment = self.block_commitments.as_ref().map(|el| el[idx]);
-            let price_commitment = self.price_commitments.as_ref().map(|el| el[idx]);
+            let block_commitment = self
+                .public_input_data
+                .as_ref()
+                .map(|el| el[idx].block_commitment);
+            let price_commitment = self
+                .public_input_data
+                .as_ref()
+                .map(|el| el[idx].price_commitment);
             let allocated_block_commitment =
                 Num::Variable(AllocatedNum::alloc(cs, || Ok(*block_commitment.get()?))?);
             let allocated_price_commitment =
@@ -349,6 +354,8 @@ where
             }
         }
 
+        hash_to_public_inputs.push(final_price_commitment.get_variable());
+
         hash_to_public_inputs.extend(point_into_num(cs, &pair_with_generator)?);
         hash_to_public_inputs.extend(point_into_num(cs, &pair_with_x)?);
 
@@ -361,8 +368,6 @@ where
             .collect::<Vec<_>>();
         let input_commitment = CircuitGenericSponge::hash_num(cs, &inputs, &params, None)?[0];
         input_commitment.get_variable().inputize(cs)?;
-
-        final_price_commitment.get_variable().inputize(cs)?;
 
         Ok(())
     }

@@ -11,13 +11,15 @@ use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::field::
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
 use advanced_circuit_component::franklin_crypto::rescue::RescueEngine;
 use once_cell::sync::Lazy;
-use advanced_circuit_component::rescue_poseidon::GenericSponge;
+use advanced_circuit_component::rescue_poseidon::{GenericSponge, PoseidonParams};
 use advanced_circuit_component::utils::bn254_rescue_params;
-use crate::witness::DefaultRescueParams;
+use crate::witness::{DefaultPoseidonParams, DefaultRescueParams};
 
 pub static RNS_PARAMETERS: Lazy<RnsParameters<Bn256, <Bn256 as Engine>::Fq>> =
     Lazy::new(|| RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4));
 pub static RESCUE_PARAMETERS: Lazy<DefaultRescueParams<Bn256>> = Lazy::new(bn254_rescue_params);
+pub static POSEIDON_PARAMETERS: Lazy<DefaultPoseidonParams<Bn256>> =
+    Lazy::new(PoseidonParams::<Bn256, 2, 3>::default);
 
 pub struct StaticRescueBinaryTreeHasher<E: RescueEngine> {
     params: DefaultRescueParams<E>,
