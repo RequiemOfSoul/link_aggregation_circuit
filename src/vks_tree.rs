@@ -17,8 +17,7 @@ use crate::witness::DefaultRescueParams;
 
 pub static RNS_PARAMETERS: Lazy<RnsParameters<Bn256, <Bn256 as Engine>::Fq>> =
     Lazy::new(|| RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4));
-pub static RESCUE_PARAMETERS: Lazy<DefaultRescueParams<Bn256>> =
-    Lazy::new(bn254_rescue_params);
+pub static RESCUE_PARAMETERS: Lazy<DefaultRescueParams<Bn256>> = Lazy::new(bn254_rescue_params);
 
 pub struct StaticRescueBinaryTreeHasher<E: RescueEngine> {
     params: DefaultRescueParams<E>,

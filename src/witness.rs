@@ -70,12 +70,8 @@ pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
         let (is_valid, [for_gen, for_x]) = verify_and_aggregate::<
             _,
             _,
-            GenericTranscriptForRNSInFieldOnly<E, DefaultRescueParams<E>, 2, 3>
-        >(
-            proof,
-            vk,
-            Some((params, rns_params)),
-        )
+            GenericTranscriptForRNSInFieldOnly<E, DefaultRescueParams<E>, 2, 3>,
+        >(proof, vk, Some((params, rns_params)))
         .expect("should verify");
 
         assert!(is_valid, "individual proof is not valid");
@@ -208,7 +204,9 @@ fn decompose_point_into_limbs<E: Engine>(
     dst: &mut Vec<E::Fr>,
     params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) {
-    use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::utils::{self};
+    use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::utils::{
+        self,
+    };
 
     let mut new_params = params.clone();
     new_params.set_prefer_single_limb_allocation(true);
@@ -223,8 +221,11 @@ pub fn create_recursive_circuit_setup<'a>(
     num_inputs: usize,
     vk_tree_depth: usize,
 ) -> Result<NewSetup<Bn256, RecursiveAggregationCircuitBn256<'a>>, SynthesisError> {
-    let mut assembly =
-        SetupAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
+    let mut assembly = SetupAssembly::<
+        Bn256,
+        Width4WithCustomGates,
+        SelectorOptimizedWidth4MainGateWithDNext,
+    >::new();
 
     let rns_params = RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4);
     let rescue_params = bn254_rescue_params();
@@ -468,8 +469,11 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
     if quick_check_if_satisifed {
         println!("Checking if satisfied");
-        let mut assembly =
-            TrivialAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
+        let mut assembly = TrivialAssembly::<
+            Bn256,
+            Width4WithCustomGates,
+            SelectorOptimizedWidth4MainGateWithDNext,
+        >::new();
         recursive_circuit_with_witness
             .synthesize(&mut assembly)
             .expect("must synthesize");
@@ -486,8 +490,11 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         }
     }
 
-    let mut assembly =
-        ProvingAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
+    let mut assembly = ProvingAssembly::<
+        Bn256,
+        Width4WithCustomGates,
+        SelectorOptimizedWidth4MainGateWithDNext,
+    >::new();
     recursive_circuit_with_witness
         .synthesize(&mut assembly)
         .expect("must synthesize");

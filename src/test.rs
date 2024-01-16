@@ -28,7 +28,11 @@ use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circui
 use advanced_circuit_component::utils::bn254_rescue_params;
 
 use crate::vks_tree::make_vks_tree;
-use crate::witness::{create_recursive_circuit_vk_and_setup, make_aggregate, make_public_input_and_limbed_aggregate, proof_recursive_aggregate_for_zklink, RecursiveAggregationCircuitBn256, RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion};
+use crate::witness::{
+    create_recursive_circuit_vk_and_setup, make_aggregate, make_public_input_and_limbed_aggregate,
+    proof_recursive_aggregate_for_zklink, RecursiveAggregationCircuitBn256,
+    RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion,
+};
 
 use super::circuit::*;
 
@@ -122,10 +126,14 @@ fn test_two_proofs() {
     let rescue_params = bn254_rescue_params();
     let transcript_params = (&rescue_params, &rns_params);
 
-    let (vk_0, proof_0) =
-        make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(circuit_0, transcript_params);
-    let (vk_1, proof_1) =
-        make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(circuit_1, transcript_params);
+    let (vk_0, proof_0) = make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(
+        circuit_0,
+        transcript_params,
+    );
+    let (vk_1, proof_1) = make_vk_and_proof::<Bn256, RescueTranscriptForRecursion<Bn256>>(
+        circuit_1,
+        transcript_params,
+    );
 
     let worker = Worker::new();
     let crs_mons = Crs::<Bn256, CrsForMonomialForm>::crs_42(32, &worker);
@@ -210,7 +218,11 @@ fn test_two_proofs() {
         price_commitments: Some(price_commitments),
     };
 
-    let mut cs = TrivialAssembly::<Bn256, Width4WithCustomGates, SelectorOptimizedWidth4MainGateWithDNext>::new();
+    let mut cs = TrivialAssembly::<
+        Bn256,
+        Width4WithCustomGates,
+        SelectorOptimizedWidth4MainGateWithDNext,
+    >::new();
     recursive_circuit
         .synthesize(&mut cs)
         .expect("should synthesize");
@@ -389,11 +401,11 @@ fn simulate_zklink_proofs() {
             &crs,
         );
 
-        let valid = better_cs::verifier::verify::<
-            _,
-            _,
-            RescueTranscriptForRecursion<Bn256>,
-        >(&proof, &vk, Some(transcript_params))
+        let valid = better_cs::verifier::verify::<_, _, RescueTranscriptForRecursion<Bn256>>(
+            &proof,
+            &vk,
+            Some(transcript_params),
+        )
         .expect("must verify");
         assert!(valid);
 
@@ -545,11 +557,11 @@ fn simulate_many_proofs() {
             &crs,
         );
 
-        let valid = better_cs::verifier::verify::<
-            _,
-            _,
-            RescueTranscriptForRecursion<Bn256>,
-        >(&proof, &vk, Some(transcript_params))
+        let valid = better_cs::verifier::verify::<_, _, RescueTranscriptForRecursion<Bn256>>(
+            &proof,
+            &vk,
+            Some(transcript_params),
+        )
         .expect("must verify");
         assert!(valid);
 

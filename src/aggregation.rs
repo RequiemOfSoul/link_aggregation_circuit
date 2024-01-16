@@ -23,9 +23,13 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
     aux_data: &AD,
     params: &'a RnsParameters<E, <E::G1Affine as GenericCurveAffine>::Base>,
 ) -> Result<[WP; 2], SynthesisError>
-    where
-        E: Engine, CS: ConstraintSystem<E>, T: TranscriptGadget<E>, AD: AuxData<E>,
-        P: PlonkConstraintSystemParams<E>, WP: WrappedAffinePoint<'a, E>
+where
+    E: Engine,
+    CS: ConstraintSystem<E>,
+    T: TranscriptGadget<E>,
+    AD: AuxData<E>,
+    P: PlonkConstraintSystemParams<E>,
+    WP: WrappedAffinePoint<'a, E>,
 {
     assert!(P::CAN_ACCESS_NEXT_TRACE_STEP);
 
@@ -59,7 +63,8 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
         (None, None)
     };
 
-    let domain_size_decomposed = if let Some(domain_size) = vk.domain_size_as_allocated_num.as_ref() {
+    let domain_size_decomposed = if let Some(domain_size) = vk.domain_size_as_allocated_num.as_ref()
+    {
         assert!(vk.n.is_none());
         let absolute_limit = (E::Fr::S + 1) as usize;
         let decomposed = domain_size.into_bits_le(cs, Some(absolute_limit))?;
@@ -147,14 +152,19 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
         let mut pow_decomposition = pow_decomposition.to_vec();
         pow_decomposition.reverse();
 
-        let z_in_pow_domain_size = AllocatedNum::<E>::pow(cs, &z.get_variable(), &pow_decomposition)?;
+        let z_in_pow_domain_size =
+            AllocatedNum::<E>::pow(cs, &z.get_variable(), &pow_decomposition)?;
 
         Num::Variable(z_in_pow_domain_size)
     };
 
     let omega_inv_variable = if let Some(omega) = vk.omega_as_allocated_num.as_ref() {
-        let inv = omega.inverse(cs)
-            .unwrap_or_else(|_e| panic!("Inverse of the domain generator must exist! Omega = {:?}", omega.get_value()));
+        let inv = omega.inverse(cs).unwrap_or_else(|_e| {
+            panic!(
+                "Inverse of the domain generator must exist! Omega = {:?}",
+                omega.get_value()
+            )
+        });
 
         Some(inv)
     } else {
@@ -169,7 +179,7 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
             0,
             &omega_inv,
             z.get_variable(),
-            z_in_pow_domain_size.get_variable()
+            z_in_pow_domain_size.get_variable(),
         )?
     } else {
         evaluate_lagrange_poly_for_variable_domain_size(
@@ -178,7 +188,7 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
             *vk.domain_size_as_allocated_num.as_ref().unwrap(),
             omega_inv_variable.as_ref().unwrap(),
             z.get_variable(),
-            z_in_pow_domain_size.get_variable()
+            z_in_pow_domain_size.get_variable(),
         )?
     };
 
@@ -204,7 +214,7 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
                             idx,
                             &omega_inv,
                             z.get_variable(),
-                            z_in_pow_domain_size.get_variable()
+                            z_in_pow_domain_size.get_variable(),
                         )?
                     } else {
                         evaluate_lagrange_poly_for_variable_domain_size(
@@ -213,7 +223,7 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
                             *vk.domain_size_as_allocated_num.as_ref().unwrap(),
                             omega_inv_variable.as_ref().unwrap(),
                             z.get_variable(),
-                            z_in_pow_domain_size.get_variable()
+                            z_in_pow_domain_size.get_variable(),
                         )?
                     };
 
@@ -227,7 +237,11 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
         let mut z_part = proof.grand_product_at_z_omega;
 
-        for (w, p) in proof.wire_values_at_z.iter().zip(proof.permutation_polynomials_at_z.iter()) {
+        for (w, p) in proof
+            .wire_values_at_z
+            .iter()
+            .zip(proof.permutation_polynomials_at_z.iter())
+        {
             let mut tmp = *p;
             tmp = tmp.mul(cs, &beta)?;
             tmp = tmp.add(cs, &gamma)?;
@@ -274,10 +288,9 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
     // calculate the power to add z(X) commitment that is opened at x*omega
     // it's r(X) + witness + all permutations + 1
-    let v_power_for_standalone_z_x_opening = 1 + 1 + P::STATE_WIDTH + (P::STATE_WIDTH-1);
+    let v_power_for_standalone_z_x_opening = 1 + 1 + P::STATE_WIDTH + (P::STATE_WIDTH - 1);
 
     let mut virtual_commitment_for_linearization_poly = {
-
         let mut r = vk.selector_commitments[selector_q_const_index].clone();
         let mut points: Vec<WP> = vec![];
         let mut scalars: Vec<AllocatedNum<E>> = vec![];
@@ -305,7 +318,7 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
         // v * [alpha * (a + beta*z + gamma)(b + beta*k_1*z + gamma)()() * z(X) -
         // - \alpha * (a*perm_a(z)*beta + gamma)()()*beta*z(z*omega) * perm_d(X) +
-        // + alpha^2 * L_0(z) * z(X) ] + 
+        // + alpha^2 * L_0(z) * z(X) ] +
         // + v^{P} * u * z(X)
         // and join alpha^2 * L_0(z) and v^{P} * u into the first term containing z(X)
 
@@ -314,31 +327,31 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
             let mut scalar: Option<AllocatedNum<E>> = None;
 
             // permutation part
-            for (wire, non_res) in proof.wire_values_at_z.iter()
+            for (wire, non_res) in proof
+                .wire_values_at_z
+                .iter()
                 .zip(Some(E::Fr::one()).iter().chain(&vk.non_residues))
             {
                 // tmp = non_res * z * beta + wire
-                let mut tmp = AllocatedNum::alloc(
-                    cs,
-                    || {
-                        // non_res * z * beta + wire
+                let mut tmp = AllocatedNum::alloc(cs, || {
+                    // non_res * z * beta + wire
 
-                        let mut result = *z.get_value().get()?;
-                        result.mul_assign(beta.get_value().get()?);
-                        result.mul_assign(non_res);
+                    let mut result = *z.get_value().get()?;
+                    result.mul_assign(beta.get_value().get()?);
+                    result.mul_assign(non_res);
 
-                        result.add_assign(wire.get_value().get()?);
+                    result.add_assign(wire.get_value().get()?);
 
-                        Ok(result)
-                    }
-                )?;
+                    Ok(result)
+                })?;
 
                 // create arithmetic terms
 
                 let z_beta_by_non_res_term = ArithmeticTerm::from_variable_and_coeff(
                     z.get_variable().get_variable(),
-                    *non_res
-                ).mul_by_variable(Variable::new_unchecked(beta.get_variable().get_unchecked()));
+                    *non_res,
+                )
+                .mul_by_variable(Variable::new_unchecked(beta.get_variable().get_unchecked()));
                 let wire_term = ArithmeticTerm::from_variable(wire.get_variable());
                 let tmp_term = ArithmeticTerm::from_variable(tmp.get_variable());
                 let mut term = MainGateTerm::new();
@@ -391,28 +404,28 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
             let mut scalar: Option<AllocatedNum<E>> = None;
 
             // permutation part
-            for (wire, perm_at_z) in proof.wire_values_at_z.iter()
+            for (wire, perm_at_z) in proof
+                .wire_values_at_z
+                .iter()
                 .zip(&proof.permutation_polynomials_at_z)
             {
                 // tmp = perm_at_z * beta + wire
-                let mut tmp = AllocatedNum::alloc(
-                    cs,
-                    || {
-                        // perm(z) * beta + wire
+                let mut tmp = AllocatedNum::alloc(cs, || {
+                    // perm(z) * beta + wire
 
-                        let mut result = *beta.get_value().get()?;
-                        result.mul_assign(perm_at_z.get_value().get()?);
+                    let mut result = *beta.get_value().get()?;
+                    result.mul_assign(perm_at_z.get_value().get()?);
 
-                        result.add_assign(wire.get_value().get()?);
+                    result.add_assign(wire.get_value().get()?);
 
-                        Ok(result)
-                    }
-                )?;
+                    Ok(result)
+                })?;
 
                 // create arithmetic terms
 
-                let z_beta_by_non_res_term = ArithmeticTerm::from_variable(perm_at_z.get_variable())
-                    .mul_by_variable(beta.get_variable());
+                let z_beta_by_non_res_term =
+                    ArithmeticTerm::from_variable(perm_at_z.get_variable())
+                        .mul_by_variable(beta.get_variable());
                 let wire_term = ArithmeticTerm::from_variable(wire.get_variable());
                 let tmp_term = ArithmeticTerm::from_variable(tmp.get_variable());
                 let mut term = MainGateTerm::new();
@@ -443,7 +456,8 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
             let mut scalar = scalar.unwrap();
 
-            scalar = scalar.mul(cs, &beta)?
+            scalar = scalar
+                .mul(cs, &beta)?
                 .mul(cs, &proof.grand_product_at_z_omega)?
                 .mul(cs, &alpha)?;
 
@@ -465,7 +479,8 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
         r = r.mul(cs, &v, None, params, aux_data)?;
         let mut grand_product = proof.grand_product_commitment.clone();
-        let mut tmp = grand_product.mul(cs, &grand_product_part_at_z_omega, None, params, aux_data)?;
+        let mut tmp =
+            grand_product.mul(cs, &grand_product_part_at_z_omega, None, params, aux_data)?;
         r = r.add(cs, &mut tmp, params)?;
 
         r
@@ -476,7 +491,7 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
     let mut commitments_aggregation = proof.quotient_poly_commitments[0].clone();
 
-    let mut scalars : Vec<AllocatedNum<E>> = vec![];
+    let mut scalars: Vec<AllocatedNum<E>> = vec![];
     let mut points: Vec<WP> = vec![];
 
     let mut current = z_in_pow_domain_size;
@@ -489,7 +504,8 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
     let mut multi_opening_challenge = v;
     // power of v is contained inside
-    commitments_aggregation = commitments_aggregation.add(cs, &mut virtual_commitment_for_linearization_poly, params)?;
+    commitments_aggregation =
+        commitments_aggregation.add(cs, &mut virtual_commitment_for_linearization_poly, params)?;
 
     // do the same for wires
     for com in proof.wire_commitments.iter() {
@@ -500,7 +516,10 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
     }
 
     // and for all permutation polynomials except the last one
-    assert_eq!(vk.permutation_commitments.len(), proof.permutation_polynomials_at_z.len() + 1);
+    assert_eq!(
+        vk.permutation_commitments.len(),
+        proof.permutation_polynomials_at_z.len() + 1
+    );
 
     let arr_len = vk.permutation_commitments.len();
     for com in vk.permutation_commitments[0..(arr_len - 1)].iter() {
@@ -526,7 +545,8 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
     let mut multi_opening_challenge_for_values = v;
     let mut aggregated_value = proof.quotient_polynomial_at_z;
-    for (i, value_at_z) in Some(proof.linearization_polynomial_at_z).iter()
+    for (i, value_at_z) in Some(proof.linearization_polynomial_at_z)
+        .iter()
         .chain(&proof.wire_values_at_z)
         .chain(&proof.permutation_polynomials_at_z)
         .enumerate()
@@ -562,8 +582,8 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
     scalars.push(aggregated_value);
 
     // next, we need to check that
-    // e(proof_for_z + u*proof_for_z_omega, g2^x) = 
-    // e(z*proof_for_z + z*omega*u*proof_for_z_omega + (aggregated_commitment - aggregated_opening), g2^1) 
+    // e(proof_for_z + u*proof_for_z_omega, g2^x) =
+    // e(z*proof_for_z + z*omega*u*proof_for_z_omega + (aggregated_commitment - aggregated_opening), g2^1)
     // however, we are going to compute the pairing itself outside the circuit
     // here we only go to prepare the pairing argumets:
     // arg1 = proof_for_z + u*proof_for_z_omega
@@ -597,7 +617,10 @@ pub(crate) fn aggregate_proof<'a, E, CS, T, P, AD, WP>(
 
     let u_as_term = Term::<E>::from_allocated_num(u);
     // z*omega*u
-    let z_omega_by_u = z_omega_term.mul(cs, &u_as_term)?.collapse_into_num(cs)?.get_variable();
+    let z_omega_by_u = z_omega_term
+        .mul(cs, &u_as_term)?
+        .collapse_into_num(cs)?
+        .get_variable();
 
     points.push(proof.opening_at_z_omega_proof.clone());
     scalars.push(z_omega_by_u);

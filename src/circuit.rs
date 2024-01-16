@@ -197,15 +197,16 @@ where
             let proof = &proof_witnesses[proof_idx];
             let vk = &vk_witnesses[proof_idx];
 
-            let [pair_with_generator, pair_with_x] = crate::aggregation::aggregate_proof::<_, _, T, CS::Params, _, _>(
-                cs,
-                self.transcript_params,
-                &proof.input_values,
-                vk,
-                proof,
-                &self.aux_data,
-                self.rns_params,
-            )?;
+            let [pair_with_generator, pair_with_x] =
+                crate::aggregation::aggregate_proof::<_, _, T, CS::Params, _, _>(
+                    cs,
+                    self.transcript_params,
+                    &proof.input_values,
+                    vk,
+                    proof,
+                    &self.aux_data,
+                    self.rns_params,
+                )?;
 
             pairs_for_generator.push(pair_with_generator);
             pairs_for_x.push(pair_with_x);
@@ -482,7 +483,7 @@ fn rescue_node_hash<E: RescueEngine, CS: ConstraintSystem<E>>(
         cs,
         &[Num::Variable(left), Num::Variable(right)],
         params,
-        None
+        None,
     )?[0]
         .clone()
         .into_allocated_num(cs)?;
