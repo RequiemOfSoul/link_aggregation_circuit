@@ -10,6 +10,4 @@ advanced_circuit_component = { git = "https://github.com/zkLinkProtocol/advanced
 hex = "*"
 once_cell = "*"
 sha2 = "0.10.2"
-
-[features]
-test = []
+serde = { version = "1.0.194", features = ["derive"] }
