@@ -19,6 +19,7 @@ use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_c
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
 use advanced_circuit_component::rescue_poseidon::{GenericSponge, HashParams, PoseidonParams, RescueParams};
 use advanced_circuit_component::recursion::transcript::{GenericTranscriptForRNSInFieldOnly, GenericTranscriptGadget};
+use serde::{Deserialize, Serialize};
 use crate::circuit::{RecursiveAggregationCircuit, ZKLINK_NUM_INPUTS};
 use crate::vks_tree::{create_vks_tree, POSEIDON_PARAMETERS, RESCUE_PARAMETERS, RNS_PARAMETERS};
 
@@ -290,7 +291,7 @@ pub struct RecursiveAggregationDataStorage<E: Engine> {
     pub limbed_aggregated_g1_elements: Vec<E::Fr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockPublicInputData<E: Engine> {
     pub block_commitment: E::Fr,
     pub price_commitment: E::Fr,
