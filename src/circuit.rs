@@ -51,6 +51,7 @@ pub struct RecursiveAggregationCircuit<
     pub transcript_params: &'a T::Params,
     pub public_input_data: Option<Vec<BlockPublicInputData<E>>>,
     pub g2_elements: Option<[E::G2Affine; 2]>,
+    pub input_commitment: Option<E::Fr>,
 
     pub _m: std::marker::PhantomData<WP>,
 }
@@ -342,16 +343,15 @@ where
         hash_to_public_inputs.push(vk_root);
 
         // first aggregate proof ids into u8
-        for key_id in key_ids.into_iter().take(self.num_proofs_to_check) {
-            hash_to_public_inputs.push(key_id);
-        }
+        // for key_id in key_ids.into_iter().take(self.num_proofs_to_check) {
+        //     hash_to_public_inputs.push(key_id);
+        // }
 
-        // now aggregate original public inputs
-        for allocated_proof in proof_witnesses.iter().take(self.num_proofs_to_check) {
-            for input_idx in 0..self.num_inputs {
-                let input = allocated_proof.input_values[input_idx];
-                hash_to_public_inputs.push(input);
-            }
+        // now aggregate block_commitment
+        for input_data in self.public_input_data.get()? {
+            let allocated_block_commitment =
+                AllocatedNum::alloc(cs, || Ok(input_data.block_commitment))?;
+            hash_to_public_inputs.push(allocated_block_commitment);
         }
 
         hash_to_public_inputs.push(final_price_commitment.get_variable());
@@ -367,6 +367,9 @@ where
             .map(|n| Num::Variable(n))
             .collect::<Vec<_>>();
         let input_commitment = CircuitGenericSponge::hash_num(cs, &inputs, &params, None)?[0];
+
+        let expected_input_commitment = AllocatedNum::alloc(cs, || Ok(self.input_commitment.unwrap()))?;
+        expected_input_commitment.enforce_equal(cs, &input_commitment.get_variable())?;
         input_commitment.get_variable().inputize(cs)?;
 
         Ok(())

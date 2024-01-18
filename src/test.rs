@@ -225,13 +225,14 @@ pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn2
     .unwrap();
 
     let (block_input_data, final_price_commitment) = test_public_input_data(2);
-    let (_, _) = make_public_input_and_limbed_aggregate(
+    let (expected_input, _) = make_public_input_and_limbed_aggregate(
         vks_tree_root,
         &proof_ids,
         &vec![proof_0.clone(), proof_1.clone()],
         &aggregate,
         final_price_commitment,
         &*RNS_PARAMETERS,
+        &block_input_data,
     );
 
     RecursiveAggregationCircuit::<
@@ -256,6 +257,7 @@ pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn2
 
         public_input_data: Some(block_input_data),
         g2_elements: Some(g2_bases),
+        input_commitment: Some(expected_input),
 
         _m: std::marker::PhantomData,
     }

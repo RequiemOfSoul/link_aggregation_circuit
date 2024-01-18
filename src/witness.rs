@@ -102,6 +102,7 @@ pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
     aggregate: &[E::G1Affine; 2],
     final_price_commitment: E::Fr,
     rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
+    public_input_data: &[BlockPublicInputData<E>],
 ) -> (E::Fr, Vec<E::Fr>) {
     let (input, limbed_aggregate) = make_public_input_as_fr_for_hashing_and_limbed_aggreagated(
         vks_root,
@@ -110,6 +111,7 @@ pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
         aggregate,
         final_price_commitment,
         rns_params,
+        public_input_data,
     );
 
     let params = PoseidonParams::<E, 2, 3>::default();
@@ -150,25 +152,24 @@ fn make_public_input_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParam
 
 fn make_public_input_as_fr_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParams<E>>(
     vks_root: E::Fr,
-    proof_indexes: &[usize],
-    proofs: &[Proof<E, P>],
+    _proof_indexes: &[usize],
+    _proofs: &[Proof<E, P>],
     aggregate: &[E::G1Affine; 2],
     final_price_commitment: E::Fr,
     rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
+    public_input_data: &[BlockPublicInputData<E>],
 ) -> (Vec<E::Fr>, Vec<E::Fr>) {
     let mut result = vec![];
     result.push(vks_root);
 
     // add_field_element(&vks_root, &mut result);
-    for idx in proof_indexes.iter() {
-        assert!(*idx < 256);
-        result.push(E::Fr::from_str(&idx.to_string()).unwrap());
-    }
+    // for idx in proof_indexes.iter() {
+    //     assert!(*idx < 256);
+    //     result.push(E::Fr::from_str(&idx.to_string()).unwrap());
+    // }
 
-    for proof in proofs.iter() {
-        for input in proof.input_values.iter() {
-            result.push(*input);
-        }
+    for input_data in public_input_data.iter() {
+        result.push(input_data.block_commitment);
     }
     result.push(final_price_commitment);
 
@@ -248,6 +249,7 @@ pub fn create_recursive_circuit_setup<'a>(
 
         public_input_data: None,
         g2_elements: None,
+        input_commitment: None,
 
         _m: std::marker::PhantomData,
     };
@@ -386,6 +388,7 @@ pub fn create_zklink_recursive_aggregate(
         &aggregate,
         price_commitment,
         rns_params,
+        public_input_data,
     );
 
     let new = RecursiveAggregationDataStorage::<Bn256> {
@@ -486,6 +489,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         &aggregate,
         price_commitment,
         rns_params,
+        public_input_data,
     );
 
     assert_eq!(recursive_circuit_setup.num_inputs, 1);
@@ -512,6 +516,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
 
         public_input_data: Some(public_input_data.to_vec()),
         g2_elements: Some(g2_bases),
+        input_commitment: Some(expected_input),
 
         _m: std::marker::PhantomData,
     };
