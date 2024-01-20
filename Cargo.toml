@@ -7,6 +7,9 @@ edition = "2021"
 
 [dependencies]
 advanced_circuit_component = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component", branch = "main" }
+cs_derive = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component.git", branch = "main" }
+num-traits = "0.2"
+derivative = { version = "2.2.0" }
 hex = "*"
 once_cell = "*"
 sha2 = "0.10.2"

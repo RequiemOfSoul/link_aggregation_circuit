@@ -1,3 +1,9 @@
+use cs_derive::*;
+use derivative::Derivative;
+use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
+use advanced_circuit_component::vm::structural_eq::*;
+use advanced_circuit_component::traits::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::boolean::Boolean;
 use advanced_circuit_component::franklin_crypto::bellman::bn256::{Bn256, Fr};
 use advanced_circuit_component::franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError};
 use advanced_circuit_component::franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
@@ -17,6 +23,8 @@ use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_c
 };
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs::cs::PlonkConstraintSystemParams as OldCSParams;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::allocated_num::Num;
+use advanced_circuit_component::recursion::node_aggregation::{NodeAggregationOutputData, NodeAggregationOutputDataWitness};
 use advanced_circuit_component::rescue_poseidon::{GenericSponge, HashParams, PoseidonParams, RescueParams};
 use advanced_circuit_component::recursion::transcript::{GenericTranscriptForRNSInFieldOnly, GenericTranscriptGadget};
 use serde::{Deserialize, Serialize};
@@ -37,6 +45,56 @@ pub type RescueTranscriptForRecursion<'a, E> =
     GenericTranscriptForRNSInFieldOnly<'a, E, RescueParams<E, 2, 3>, 2, 3>;
 pub type RescueTranscriptGadgetForRecursion<E> =
     GenericTranscriptGadget<E, RescueParams<E, 2, 3>, 2, 3>;
+
+pub const BLOCK_AGG_NUM: usize = 1;
+
+#[derive(
+    Derivative,
+    CSAllocatable,
+    CSWitnessable,
+    CSPackable,
+    CSSelectable,
+    CSEqual,
+    CSEncodable,
+    CSDecodable,
+    CSVariableLengthEncodable,
+)]
+#[derivative(Clone, Debug)]
+pub struct BlockAggregationOutputData<E: Engine> {
+    pub vk_root: Num<E>,
+    pub final_price_commitment: Num<E>, // previous_price_hash^2 + this_price_hash
+    pub blocks_commitments: [Num<E>; BLOCK_AGG_NUM],
+    pub aggregation_output_data: NodeAggregationOutputData<E>,
+}
+
+impl<E: Engine> BlockAggregationOutputDataWitness<E> {
+    pub fn new(
+        vks_tree_root: E::Fr,
+        limbed_aggreagate: &[E::Fr],
+        block_input_data: &[BlockPublicInputData<E>],
+        final_price_commitment: E::Fr,
+    ) -> Self {
+        use advanced_circuit_component::recursion::recursion_tree::NUM_LIMBS;
+        assert_eq!(limbed_aggreagate.len(), NUM_LIMBS * 4);
+        let (pair_with_generator_x, left) = limbed_aggreagate.split_at(NUM_LIMBS);
+        let (pair_with_generator_y, left) = left.split_at(NUM_LIMBS);
+        let (pair_with_x_x, left) = left.split_at(NUM_LIMBS);
+        let (pair_with_x_y, _left) = left.split_at(NUM_LIMBS);
+        BlockAggregationOutputDataWitness {
+            vk_root: vks_tree_root,
+            final_price_commitment,
+            blocks_commitments: block_input_data.iter().map(|data| data.block_commitment).collect::<Vec<_>>().try_into().unwrap(),
+            aggregation_output_data: NodeAggregationOutputDataWitness {
+                pair_with_x_x: pair_with_x_x.to_vec().try_into().unwrap(),
+                pair_with_x_y: pair_with_x_y.to_vec().try_into().unwrap(),
+                pair_with_generator_x: pair_with_generator_x.to_vec().try_into().unwrap(),
+                pair_with_generator_y: pair_with_generator_y.to_vec().try_into().unwrap(),
+                _marker: Default::default(),
+            },
+            _marker: Default::default(),
+        }
+    }
+}
 
 pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
     proofs: &[Proof<E, P>],
@@ -249,6 +307,7 @@ pub fn create_recursive_circuit_setup<'a>(
         public_input_data: None,
         g2_elements: None,
 
+        output: None,
         _m: std::marker::PhantomData,
     };
 
@@ -489,7 +548,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     );
 
     assert_eq!(recursive_circuit_setup.num_inputs, 1);
-    assert_eq!(recursive_circuit_vk.total_lookup_entries_length, 0);
+    // assert_eq!(recursive_circuit_vk.total_lookup_entries_length, 0);
 
     let mut g2_bases = [<<Bn256 as Engine>::G2Affine as CurveAffine>::zero(); 2];
     g2_bases.copy_from_slice(&crs.g2_monomial_bases.as_ref()[..]);
@@ -513,6 +572,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         public_input_data: Some(public_input_data.to_vec()),
         g2_elements: Some(g2_bases),
 
+        output: None,
         _m: std::marker::PhantomData,
     };
 

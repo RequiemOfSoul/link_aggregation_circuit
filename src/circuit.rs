@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+
+use advanced_circuit_component::circuit_structures::byte::IntoBytes;
 use advanced_circuit_component::franklin_crypto::bellman::pairing::ff::*;
 use advanced_circuit_component::franklin_crypto::bellman::pairing::*;
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::*;
@@ -11,19 +13,26 @@ use advanced_circuit_component::franklin_crypto::bellman::SynthesisError;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::allocated_num::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::Assignment;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::field::*;
-use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::range_constraint_gate::TwoBitDecompositionRangecheckCustomGate;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint_new::BITWISE_LOGICAL_OPS_TABLE_NAME;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::boolean::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::custom_rescue_gate::Rescue5CustomGate;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::rescue::*;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::tables::inscribe_default_range_table_for_bit_width_over_first_three_columns;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::*;
 use advanced_circuit_component::franklin_crypto::rescue::{RescueEngine, RescueHashParams};
+use advanced_circuit_component::glue::optimizable_queue::commit_encodable_item;
+use advanced_circuit_component::recursion::node_aggregation::NodeAggregationOutputData;
+use advanced_circuit_component::recursion::RANGE_CHECK_TABLE_BIT_WIDTH;
+use advanced_circuit_component::recursion::recursion_tree::NUM_LIMBS;
 use advanced_circuit_component::recursion::transcript::TranscriptGadget;
 use advanced_circuit_component::rescue_poseidon::{CircuitGenericSponge, PoseidonParams};
+use advanced_circuit_component::traits::GenericHasher;
+use advanced_circuit_component::vm::tables::BitwiseLogicTable;
+use crate::BLOCK_AGG_NUM;
 
-use crate::utils::bytes_to_keep;
-use crate::witness::{BlockPublicInputData, DefaultRescueParams};
+use crate::witness::{BlockAggregationOutputData, BlockAggregationOutputDataWitness, BlockPublicInputData, DefaultRescueParams};
 
 pub const ZKLINK_NUM_INPUTS: usize = 1;
 pub const ALLIGN_FIELD_ELEMENTS_TO_BITS: usize = 256;
@@ -51,6 +60,7 @@ pub struct RecursiveAggregationCircuit<
     pub transcript_params: &'a T::Params,
     pub public_input_data: Option<Vec<BlockPublicInputData<E>>>,
     pub g2_elements: Option<[E::G2Affine; 2]>,
+    pub output: Option<BlockAggregationOutputDataWitness<E>>,
 
     pub _m: std::marker::PhantomData<WP>,
 }
@@ -68,6 +78,24 @@ where
     type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+        if cs.get_table(BITWISE_LOGICAL_OPS_TABLE_NAME).is_err() {
+            let columns3 = vec![
+                PolyIdentifier::VariablesPolynomial(0),
+                PolyIdentifier::VariablesPolynomial(1),
+                PolyIdentifier::VariablesPolynomial(2),
+            ];
+            let name = BITWISE_LOGICAL_OPS_TABLE_NAME;
+            let bitwise_logic_table = LookupTableApplication::new(
+                name,
+                BitwiseLogicTable::new(name, 8),
+                columns3.clone(),
+                None,
+                true,
+            );
+            cs.add_table(bitwise_logic_table)?;
+        };
+        inscribe_default_range_table_for_bit_width_over_first_three_columns(cs, RANGE_CHECK_TABLE_BIT_WIDTH)?;
+
         let num_bits_in_proof_id = self.vk_tree_depth;
 
         let non_residues = make_non_residues::<E::Fr>(P::STATE_WIDTH - 1);
@@ -225,7 +253,6 @@ where
         }
 
         // perform final aggregation
-
         let pair_with_generator = WP::multiexp(
             cs,
             &scalars,
@@ -260,6 +287,7 @@ where
 
         // check public input and compute final price commitment
         let mut final_price_commitment = Num::zero();
+        let mut blocks_commitments = [Num::zero(); BLOCK_AGG_NUM];
         let params = PoseidonParams::<E, 2, 3>::default();
         for idx in 0..self.num_proofs_to_check {
             let block_commitment = self
@@ -284,6 +312,8 @@ where
                 .get_variable();
             let expected_input = proof_witnesses[idx].input_values[0];
             expected_input.enforce_equal(cs, &commitment)?;
+
+            blocks_commitments[idx] = allocated_block_commitment;
             // Compute final price commitment
             let square = final_price_commitment.mul(cs, &final_price_commitment)?;
             final_price_commitment = square.add(cs, &allocated_price_commitment)?;
@@ -337,37 +367,27 @@ where
             }
         }
 
-        let mut hash_to_public_inputs = vec![];
-        // VKs tree
-        hash_to_public_inputs.push(vk_root);
+        let pair_with_generator = point_into_num(cs, &pair_with_generator)?;
+        let pair_with_x = point_into_num(cs, &pair_with_x)?;
+        assert_eq!(pair_with_generator.len(), NUM_LIMBS * 2);
+        assert_eq!(pair_with_x.len(), NUM_LIMBS * 2);
 
-        // first aggregate proof ids into u8
-        for key_id in key_ids.into_iter().take(self.num_proofs_to_check) {
-            hash_to_public_inputs.push(key_id);
-        }
-
-        // now aggregate original public inputs
-        for allocated_proof in proof_witnesses.iter().take(self.num_proofs_to_check) {
-            for input_idx in 0..self.num_inputs {
-                let input = allocated_proof.input_values[input_idx];
-                hash_to_public_inputs.push(input);
-            }
-        }
-
-        hash_to_public_inputs.push(final_price_commitment.get_variable());
-
-        hash_to_public_inputs.extend(point_into_num(cs, &pair_with_generator)?);
-        hash_to_public_inputs.extend(point_into_num(cs, &pair_with_x)?);
-
-        let keep = bytes_to_keep::<E>();
-        assert!(keep <= 32);
-
-        let inputs = hash_to_public_inputs
-            .into_iter()
-            .map(|n| Num::Variable(n))
-            .collect::<Vec<_>>();
-        let input_commitment = CircuitGenericSponge::hash_num(cs, &inputs, &params, None)?[0];
+        let block_aggregation_data = BlockAggregationOutputData {
+            vk_root: Num::Variable(vk_root),
+            final_price_commitment,
+            blocks_commitments,
+            aggregation_output_data: NodeAggregationOutputData {
+                pair_with_x_x: pair_with_x[0..NUM_LIMBS].iter().copied().map(Num::Variable).collect::<Vec<_>>().try_into().unwrap(),
+                pair_with_x_y: pair_with_x[NUM_LIMBS..].iter().copied().map(Num::Variable).collect::<Vec<_>>().try_into().unwrap(),
+                pair_with_generator_x: pair_with_generator[0..NUM_LIMBS].iter().copied().map(Num::Variable).collect::<Vec<_>>().try_into().unwrap(),
+                pair_with_generator_y: pair_with_generator[NUM_LIMBS..].iter().copied().map(Num::Variable).collect::<Vec<_>>().try_into().unwrap(),
+            },
+        };
+        let commit_function = GenericHasher::new_from_params(&params);
+        let input_commitment = commit_encodable_item(cs, &block_aggregation_data, &commit_function)?;
         input_commitment.get_variable().inputize(cs)?;
+
+        input_commitment.into_be_bytes(cs)?; // only use lookup and generate commitment for final aggregation
 
         Ok(())
     }
@@ -375,7 +395,6 @@ where
     fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
         Ok(vec![
             SelectorOptimizedWidth4MainGateWithDNext.into_internal(),
-            TwoBitDecompositionRangecheckCustomGate.into_internal(),
             Rescue5CustomGate.into_internal(),
         ])
     }

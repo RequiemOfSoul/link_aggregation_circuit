@@ -10,13 +10,14 @@ use advanced_circuit_component::franklin_crypto::bellman::{CurveAffine, Engine, 
 use advanced_circuit_component::franklin_crypto::plonk::circuit::bigint::field::RnsParameters;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::IntoLimbedWitness;
 use advanced_circuit_component::franklin_crypto::rescue::RescueEngine;
+use advanced_circuit_component::recursion::get_prefered_rns_params;
 use once_cell::sync::Lazy;
 use advanced_circuit_component::rescue_poseidon::{GenericSponge, PoseidonParams};
 use advanced_circuit_component::utils::bn254_rescue_params;
 use crate::witness::{DefaultPoseidonParams, DefaultRescueParams};
 
 pub static RNS_PARAMETERS: Lazy<RnsParameters<Bn256, <Bn256 as Engine>::Fq>> =
-    Lazy::new(|| RnsParameters::<Bn256, <Bn256 as Engine>::Fq>::new_for_field(68, 110, 4));
+    Lazy::new(get_prefered_rns_params);
 pub static RESCUE_PARAMETERS: Lazy<DefaultRescueParams<Bn256>> = Lazy::new(bn254_rescue_params);
 pub static POSEIDON_PARAMETERS: Lazy<DefaultPoseidonParams<Bn256>> =
     Lazy::new(PoseidonParams::<Bn256, 2, 3>::default);
@@ -72,7 +73,6 @@ pub fn make_vks_tree<'a, E: RescueEngine, P: OldCSParams<E>>(
         let witness = vk
             .into_witness_for_params(rns_params)
             .expect("must transform into limbed witness");
-        println!("{:?}", witness);
         vk_witnesses.push(witness);
     }
 
