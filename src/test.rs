@@ -1,15 +1,12 @@
-use advanced_circuit_component::franklin_crypto::bellman::pairing::{CurveAffine, Engine};
 use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::{Bn256, Fr};
 use advanced_circuit_component::franklin_crypto::bellman::pairing::ff::Field;
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::{Circuit, TrivialAssembly};
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::setup::VerificationKey as NewVerificationKey;
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_cs;
-use advanced_circuit_component::franklin_crypto::bellman::plonk::commitments::transcript::*;
 use advanced_circuit_component::franklin_crypto::bellman::PrimeField;
 use advanced_circuit_component::franklin_crypto::bellman::worker::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::*;
-use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::aux_data::AuxData;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::test::*;
 use crate::{proof_recursive_aggregate_for_zklink, RecursiveAggregationCircuitBn256, RescueTranscriptForRecursion};
 use crate::test_utils::*;

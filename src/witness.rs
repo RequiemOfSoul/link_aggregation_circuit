@@ -205,23 +205,17 @@ fn make_public_input_as_fr_for_hashing_and_limbed_aggreagated<E: Engine>(
     let mut result = vec![];
     result.push(vks_root);
 
-    // add_field_element(&vks_root, &mut result);
-    // for idx in proof_indexes.iter() {
-    //     assert!(*idx < 256);
-    //     result.push(E::Fr::from_str(&idx.to_string()).unwrap());
-    // }
-
+    result.push(final_price_commitment);
     for input_data in public_input_data.iter() {
         result.push(input_data.block_commitment);
     }
-    result.push(final_price_commitment);
 
-    decompose_point_into_limbs(&aggregate[0], &mut result, rns_params);
     decompose_point_into_limbs(&aggregate[1], &mut result, rns_params);
+    decompose_point_into_limbs(&aggregate[0], &mut result, rns_params);
 
     let mut limbed_aggreagate = vec![];
-    decompose_point_into_limbs(&aggregate[0], &mut limbed_aggreagate, rns_params);
     decompose_point_into_limbs(&aggregate[1], &mut limbed_aggreagate, rns_params);
+    decompose_point_into_limbs(&aggregate[0], &mut limbed_aggreagate, rns_params);
 
     (result, limbed_aggreagate)
 }
