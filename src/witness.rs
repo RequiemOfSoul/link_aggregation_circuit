@@ -1,9 +1,7 @@
 use cs_derive::*;
 use derivative::Derivative;
 use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
-use advanced_circuit_component::vm::structural_eq::*;
 use advanced_circuit_component::traits::*;
-use advanced_circuit_component::franklin_crypto::plonk::circuit::boolean::Boolean;
 use advanced_circuit_component::franklin_crypto::bellman::bn256::{Bn256, Fr};
 use advanced_circuit_component::franklin_crypto::bellman::{CurveAffine, CurveProjective, Engine, Field, PrimeField, PrimeFieldRepr, SynthesisError};
 use advanced_circuit_component::franklin_crypto::bellman::kate_commitment::{Crs, CrsForMonomialForm};
@@ -46,44 +44,37 @@ pub type RescueTranscriptForRecursion<'a, E> =
 pub type RescueTranscriptGadgetForRecursion<E> =
     GenericTranscriptGadget<E, RescueParams<E, 2, 3>, 2, 3>;
 
-pub const BLOCK_AGG_NUM: usize = 1;
-
 #[derive(
     Derivative,
     CSAllocatable,
     CSWitnessable,
-    CSPackable,
-    CSSelectable,
-    CSEqual,
-    CSEncodable,
-    CSDecodable,
-    CSVariableLengthEncodable,
+    CSVariableLengthEncodable
 )]
 #[derivative(Clone, Debug)]
 pub struct BlockAggregationOutputData<E: Engine> {
     pub vk_root: Num<E>,
     pub final_price_commitment: Num<E>, // previous_price_hash^2 + this_price_hash
-    pub blocks_commitments: [Num<E>; BLOCK_AGG_NUM],
+    pub blocks_commitments: Vec<Num<E>>,
     pub aggregation_output_data: NodeAggregationOutputData<E>,
 }
 
 impl<E: Engine> BlockAggregationOutputDataWitness<E> {
     pub fn new(
         vks_tree_root: E::Fr,
-        limbed_aggreagate: &[E::Fr],
-        block_input_data: &[BlockPublicInputData<E>],
+        limbed_aggregate: &[E::Fr],
+        block_commitment: &[E::Fr],
         final_price_commitment: E::Fr,
     ) -> Self {
         use advanced_circuit_component::recursion::recursion_tree::NUM_LIMBS;
-        assert_eq!(limbed_aggreagate.len(), NUM_LIMBS * 4);
-        let (pair_with_generator_x, left) = limbed_aggreagate.split_at(NUM_LIMBS);
+        assert_eq!(limbed_aggregate.len(), NUM_LIMBS * 4);
+        let (pair_with_generator_x, left) = limbed_aggregate.split_at(NUM_LIMBS);
         let (pair_with_generator_y, left) = left.split_at(NUM_LIMBS);
         let (pair_with_x_x, left) = left.split_at(NUM_LIMBS);
         let (pair_with_x_y, _left) = left.split_at(NUM_LIMBS);
         BlockAggregationOutputDataWitness {
             vk_root: vks_tree_root,
             final_price_commitment,
-            blocks_commitments: block_input_data.iter().map(|data| data.block_commitment).collect::<Vec<_>>().try_into().unwrap(),
+            blocks_commitments: block_commitment.to_vec(),
             aggregation_output_data: NodeAggregationOutputDataWitness {
                 pair_with_x_x: pair_with_x_x.to_vec().try_into().unwrap(),
                 pair_with_x_y: pair_with_x_y.to_vec().try_into().unwrap(),
@@ -153,21 +144,19 @@ pub fn make_aggregate<'a, E: RescueEngine, P: OldCSParams<E>>(
     Ok([pair_with_generator, pair_with_x])
 }
 
-pub fn make_public_input_and_limbed_aggregate<E: Engine, P: OldCSParams<E>>(
+pub fn make_public_input_and_limbed_aggregate<E: Engine>(
     vks_root: E::Fr,
-    proof_indexes: &[usize],
-    proofs: &[Proof<E, P>],
     aggregate: &[E::G1Affine; 2],
     final_price_commitment: E::Fr,
+    public_input_data: &[BlockPublicInputData<E>],
     rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
 ) -> (E::Fr, Vec<E::Fr>) {
     let (input, limbed_aggregate) = make_public_input_as_fr_for_hashing_and_limbed_aggreagated(
         vks_root,
-        proof_indexes,
-        proofs,
         aggregate,
         final_price_commitment,
         rns_params,
+        public_input_data,
     );
 
     let params = PoseidonParams::<E, 2, 3>::default();
@@ -206,27 +195,24 @@ fn make_public_input_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParam
     (result, limbed_aggreagate)
 }
 
-fn make_public_input_as_fr_for_hashing_and_limbed_aggreagated<E: Engine, P: OldCSParams<E>>(
+fn make_public_input_as_fr_for_hashing_and_limbed_aggreagated<E: Engine>(
     vks_root: E::Fr,
-    proof_indexes: &[usize],
-    proofs: &[Proof<E, P>],
     aggregate: &[E::G1Affine; 2],
     final_price_commitment: E::Fr,
     rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
+    public_input_data: &[BlockPublicInputData<E>],
 ) -> (Vec<E::Fr>, Vec<E::Fr>) {
     let mut result = vec![];
     result.push(vks_root);
 
     // add_field_element(&vks_root, &mut result);
-    for idx in proof_indexes.iter() {
-        assert!(*idx < 256);
-        result.push(E::Fr::from_str(&idx.to_string()).unwrap());
-    }
+    // for idx in proof_indexes.iter() {
+    //     assert!(*idx < 256);
+    //     result.push(E::Fr::from_str(&idx.to_string()).unwrap());
+    // }
 
-    for proof in proofs.iter() {
-        for input in proof.input_values.iter() {
-            result.push(*input);
-        }
+    for input_data in public_input_data.iter() {
+        result.push(input_data.block_commitment);
     }
     result.push(final_price_commitment);
 
@@ -307,7 +293,7 @@ pub fn create_recursive_circuit_setup<'a>(
         public_input_data: None,
         g2_elements: None,
 
-        output: None,
+        input_commitment: None,
         _m: std::marker::PhantomData,
     };
 
@@ -343,11 +329,22 @@ pub fn create_recursive_circuit_vk_and_setup<'a>(
 pub struct RecursiveAggregationDataStorage<E: Engine> {
     pub indexes_of_used_proofs: Vec<u8>,
     pub num_inputs: usize,
-    pub individual_proofs_inputs: Vec<Vec<E::Fr>>,
-    pub tree_root: E::Fr,
+    pub block_commitments: Vec<E::Fr>,
+    pub vks_tree_root: E::Fr,
     pub expected_recursive_input: E::Fr,
     pub price_commitment: E::Fr,
     pub limbed_aggregated_g1_elements: Vec<E::Fr>,
+}
+
+impl<E: Engine> RecursiveAggregationDataStorage<E> {
+    pub fn generate_witness(&self) -> BlockAggregationOutputDataWitness<E> {
+        BlockAggregationOutputDataWitness::new(
+            self.vks_tree_root,
+            &self.limbed_aggregated_g1_elements,
+            &self.block_commitments,
+            self.price_commitment,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -384,12 +381,14 @@ pub fn create_zklink_recursive_aggregate(
         public_input_data.len(),
         "The different number of proofs and public_input_data"
     );
-    public_input_data
+    let block_commitments = public_input_data
         .iter()
         .zip(proofs.iter())
-        .for_each(|(data, proof)| {
+        .map(|(data, proof)| {
             assert_eq!(data.hash(&*POSEIDON_PARAMETERS), proof.input_values[0]);
-        });
+            data.block_commitment
+        })
+        .collect::<Vec<_>>();
 
     let rns_params = &*RNS_PARAMETERS;
     let rescue_params = &*RESCUE_PARAMETERS;
@@ -399,7 +398,6 @@ pub fn create_zklink_recursive_aggregate(
 
     let mut vks_to_aggregate = vec![];
     let mut short_indexes = vec![];
-    let mut individual_proofs_inputs = vec![];
     for &index in vk_indexes.iter() {
         assert!(index <= max_index);
         assert!(
@@ -409,10 +407,6 @@ pub fn create_zklink_recursive_aggregate(
         let vk = &all_known_vks[index];
         vks_to_aggregate.push(vk.clone());
         short_indexes.push(index as u8);
-    }
-
-    for proof in proofs.iter() {
-        individual_proofs_inputs.push(proof.input_values.clone());
     }
 
     let aggregate = make_aggregate(proofs, &vks_to_aggregate, rescue_params, rns_params)?;
@@ -440,18 +434,17 @@ pub fn create_zklink_recursive_aggregate(
         });
     let (expected_input, limbed_aggreagate) = make_public_input_and_limbed_aggregate(
         vks_tree_root,
-        vk_indexes,
-        proofs,
         &aggregate,
         price_commitment,
+        public_input_data,
         rns_params,
     );
 
     let new = RecursiveAggregationDataStorage::<Bn256> {
         indexes_of_used_proofs: short_indexes,
         num_inputs: ZKLINK_NUM_INPUTS,
-        individual_proofs_inputs,
-        tree_root: vks_tree_root,
+        block_commitments,
+        vks_tree_root,
         expected_recursive_input: expected_input,
         price_commitment,
         limbed_aggregated_g1_elements: limbed_aggreagate,
@@ -540,10 +533,9 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
     });
     let (expected_input, _) = make_public_input_and_limbed_aggregate(
         vks_tree_root,
-        vk_indexes,
-        proofs,
         &aggregate,
         price_commitment,
+        public_input_data,
         rns_params,
     );
 
@@ -572,7 +564,7 @@ pub fn proof_recursive_aggregate_for_zklink<'a>(
         public_input_data: Some(public_input_data.to_vec()),
         g2_elements: Some(g2_bases),
 
-        output: None,
+        input_commitment: Some(expected_input),
         _m: std::marker::PhantomData,
     };
 

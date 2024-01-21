@@ -16,7 +16,7 @@ dependencies = [
 [[package]]
 name = "advanced_circuit_component"
 version = "1.3.3"
-source = "git+https://github.com/zkLinkProtocol/advanced-circuit-component?branch=main#3a35f91011ccec4ff9b94136bc61198e044213bc"
+source = "git+https://github.com/zkLinkProtocol/advanced-circuit-component?branch=main#95b5f84f5d06aeeb71edaf6d2030392c6ed2a3a4"
 dependencies = [
  "arrayvec 0.7.4",
  "cs_derive",
@@ -120,7 +120,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "bellman_ce"
 version = "0.3.2"
-source = "git+https://github.com/zkLinkProtocol/bellman?branch=dev#04e846cad306a1ae479367d2f19d9e53c18986ac"
+source = "git+https://github.com/zkLinkProtocol/bellman?branch=dev#8a8d54c472c6ca63b65b2a12cca2054aa51d9137"
 dependencies = [
  "arrayvec 0.7.4",
  "bit-vec",
@@ -198,7 +198,7 @@ dependencies = [
 [[package]]
 name = "blake2s_const"
 version = "0.6.0"
-source = "git+https://github.com/zkLinkProtocol/bellman?branch=dev#04e846cad306a1ae479367d2f19d9e53c18986ac"
+source = "git+https://github.com/zkLinkProtocol/bellman?branch=dev#8a8d54c472c6ca63b65b2a12cca2054aa51d9137"
 dependencies = [
  "arrayref",
  "arrayvec 0.5.2",
@@ -432,7 +432,7 @@ dependencies = [
 [[package]]
 name = "cs_derive"
 version = "0.1.0"
-source = "git+https://github.com/zkLinkProtocol/advanced-circuit-component?branch=main#3a35f91011ccec4ff9b94136bc61198e044213bc"
+source = "git+https://github.com/zkLinkProtocol/advanced-circuit-component?branch=main#95b5f84f5d06aeeb71edaf6d2030392c6ed2a3a4"
 dependencies = [
  "proc-macro-error",
  "proc-macro2 1.0.76",

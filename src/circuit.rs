@@ -22,7 +22,7 @@ use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circui
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::affine_point_wrapper::*;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::verifier_circuit::data_structs::*;
 use advanced_circuit_component::franklin_crypto::rescue::{RescueEngine, RescueHashParams};
-use advanced_circuit_component::glue::optimizable_queue::commit_encodable_item;
+use advanced_circuit_component::glue::optimizable_queue::commit_variable_length_encodable_item;
 use advanced_circuit_component::recursion::node_aggregation::NodeAggregationOutputData;
 use advanced_circuit_component::recursion::RANGE_CHECK_TABLE_BIT_WIDTH;
 use advanced_circuit_component::recursion::recursion_tree::NUM_LIMBS;
@@ -30,9 +30,8 @@ use advanced_circuit_component::recursion::transcript::TranscriptGadget;
 use advanced_circuit_component::rescue_poseidon::{CircuitGenericSponge, PoseidonParams};
 use advanced_circuit_component::traits::GenericHasher;
 use advanced_circuit_component::vm::tables::BitwiseLogicTable;
-use crate::BLOCK_AGG_NUM;
 
-use crate::witness::{BlockAggregationOutputData, BlockAggregationOutputDataWitness, BlockPublicInputData, DefaultRescueParams};
+use crate::witness::{BlockAggregationOutputData, BlockPublicInputData, DefaultRescueParams};
 
 pub const ZKLINK_NUM_INPUTS: usize = 1;
 pub const ALLIGN_FIELD_ELEMENTS_TO_BITS: usize = 256;
@@ -60,7 +59,7 @@ pub struct RecursiveAggregationCircuit<
     pub transcript_params: &'a T::Params,
     pub public_input_data: Option<Vec<BlockPublicInputData<E>>>,
     pub g2_elements: Option<[E::G2Affine; 2]>,
-    pub output: Option<BlockAggregationOutputDataWitness<E>>,
+    pub input_commitment: Option<E::Fr>,
 
     pub _m: std::marker::PhantomData<WP>,
 }
@@ -287,7 +286,7 @@ where
 
         // check public input and compute final price commitment
         let mut final_price_commitment = Num::zero();
-        let mut blocks_commitments = [Num::zero(); BLOCK_AGG_NUM];
+        let mut blocks_commitments = Vec::new();
         let params = PoseidonParams::<E, 2, 3>::default();
         for idx in 0..self.num_proofs_to_check {
             let block_commitment = self
@@ -313,7 +312,7 @@ where
             let expected_input = proof_witnesses[idx].input_values[0];
             expected_input.enforce_equal(cs, &commitment)?;
 
-            blocks_commitments[idx] = allocated_block_commitment;
+            blocks_commitments.push(allocated_block_commitment);
             // Compute final price commitment
             let square = final_price_commitment.mul(cs, &final_price_commitment)?;
             final_price_commitment = square.add(cs, &allocated_price_commitment)?;
@@ -384,7 +383,9 @@ where
             },
         };
         let commit_function = GenericHasher::new_from_params(&params);
-        let input_commitment = commit_encodable_item(cs, &block_aggregation_data, &commit_function)?;
+        let input_commitment = commit_variable_length_encodable_item(cs, &block_aggregation_data, &commit_function)?;
+        let expected_input_commitment = AllocatedNum::alloc(cs, || Ok(self.input_commitment.unwrap()))?;
+        expected_input_commitment.enforce_equal(cs, &input_commitment.get_variable())?;
         input_commitment.get_variable().inputize(cs)?;
 
         input_commitment.into_be_bytes(cs)?; // only use lookup and generate commitment for final aggregation

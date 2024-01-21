@@ -14,7 +14,7 @@ use crate::bellman::plonk::commitments::transcript::{Prng, Transcript};
 use crate::bellman::plonk::{Proof, SetupPolynomialsPrecomputations, VerificationKey};
 use crate::bellman::plonk::better_cs::verifier::verify_and_aggregate;
 use crate::bellman::worker::Worker;
-use crate::{BlockAggregationOutputDataWitness, BlockPublicInputData, make_aggregate, make_public_input_and_limbed_aggregate, RecursiveAggregationCircuitBn256, RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion};
+use crate::{BlockPublicInputData, make_aggregate, make_public_input_and_limbed_aggregate, RecursiveAggregationCircuitBn256, RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion};
 use crate::bellman::plonk::fft::cooley_tukey_ntt::{BitReversedOmegas, CTPrecomputations, OmegasInvBitreversed};
 use crate::circuit::RecursiveAggregationCircuit;
 use crate::vks_tree::{make_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
@@ -205,19 +205,12 @@ pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn2
         .unwrap();
 
     let (block_input_data, final_price_commitment) = test_public_input_data(1);
-    let (_, limbed_aggreagate) = make_public_input_and_limbed_aggregate(
+    let (expected_input, _limbed_aggreagate) = make_public_input_and_limbed_aggregate(
         vks_tree_root,
-        &proof_ids,
-        &vec![proof_0.clone()],
         &aggregate,
         final_price_commitment,
-        &*RNS_PARAMETERS,
-    );
-    let block_agg_output = BlockAggregationOutputDataWitness::new(
-        vks_tree_root,
-        &limbed_aggreagate,
         &block_input_data,
-        final_price_commitment
+        &*RNS_PARAMETERS,
     );
 
     RecursiveAggregationCircuit::<
@@ -243,7 +236,7 @@ pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn2
         public_input_data: Some(block_input_data),
         g2_elements: Some(g2_bases),
 
-        output: Some(block_agg_output),
+        input_commitment: Some(expected_input),
         _m: std::marker::PhantomData,
     }
 }
