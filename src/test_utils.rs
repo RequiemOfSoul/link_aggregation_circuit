@@ -14,7 +14,7 @@ use crate::bellman::plonk::commitments::transcript::{Prng, Transcript};
 use crate::bellman::plonk::{Proof, SetupPolynomialsPrecomputations, VerificationKey};
 use crate::bellman::plonk::better_cs::verifier::verify_and_aggregate;
 use crate::bellman::worker::Worker;
-use crate::{BlockPublicInputData, make_aggregate, make_public_input_and_limbed_aggregate, RecursiveAggregationCircuitBn256, RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion};
+use crate::{BlockPublicInputData, RecursiveAggregationCircuitBn256, RecursiveAggregationDataStorage, RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion};
 use crate::bellman::plonk::fft::cooley_tukey_ntt::{BitReversedOmegas, CTPrecomputations, OmegasInvBitreversed};
 use crate::circuit::RecursiveAggregationCircuit;
 use crate::vks_tree::{make_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
@@ -126,7 +126,7 @@ pub fn test_public_input_data(agg_block_num: usize) -> (Vec<BlockPublicInputData
     (all_block_test_data, acc_price_commitment)
 }
 
-pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn256<'static> {
+pub fn create_test_block_aggregation_circuit() -> (RecursiveAggregationCircuitBn256<'static>, RecursiveAggregationDataStorage<Bn256>) {
     let a = Fr::one();
     let b = Fr::one();
 
@@ -196,24 +196,21 @@ pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn2
         queries.push(q.path().to_vec());
     }
 
-    let aggregate = make_aggregate(
-        &vec![proof_0.clone()],
-        &vec![vk_0.clone()],
-        &*RESCUE_PARAMETERS,
-        &*RNS_PARAMETERS,
-    )
-        .unwrap();
+    let proofs = vec![proof_0];
+    let vks = vec![vk_0];
 
-    let (block_input_data, final_price_commitment) = test_public_input_data(1);
-    let (expected_input, _limbed_aggreagate) = make_public_input_and_limbed_aggregate(
-        vks_tree_root,
-        &aggregate,
-        final_price_commitment,
+    let (block_input_data, _final_price_commitment) = test_public_input_data(1);
+    let storage = crate::create_zklink_recursive_aggregate(
+        1,
+        1,
+        &vks_in_tree,
+        &proofs,
         &block_input_data,
-        &*RNS_PARAMETERS,
-    );
+        &proof_ids,
+        &g2_bases
+    ).unwrap();
 
-    RecursiveAggregationCircuit::<
+    let circuit = RecursiveAggregationCircuit::<
         Bn256,
         OldActualParams,
         WrapperUnchecked<Bn256>,
@@ -224,10 +221,10 @@ pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn2
         num_inputs: 4,
         vk_tree_depth: 1,
         vk_root: Some(vks_tree_root),
-        vk_witnesses: Some(vec![vk_0]),
+        vk_witnesses: Some(vks),
         vk_auth_paths: Some(queries),
         proof_ids: Some(proof_ids),
-        proofs: Some(vec![proof_0]),
+        proofs: Some(proofs),
         rescue_params: &*RESCUE_PARAMETERS,
         rns_params: &*RNS_PARAMETERS,
         aux_data,
@@ -236,9 +233,10 @@ pub fn create_test_block_aggregation_circuit() -> RecursiveAggregationCircuitBn2
         public_input_data: Some(block_input_data),
         g2_elements: Some(g2_bases),
 
-        input_commitment: Some(expected_input),
+        input_commitment: Some(storage.expected_recursive_input),
         _m: std::marker::PhantomData,
-    }
+    };
+    (circuit, storage)
 }
 
 pub fn make_vk_and_proof<E: Engine, T: Transcript<E::Fr>>(

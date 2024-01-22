@@ -16,7 +16,7 @@ use crate::witness::create_recursive_circuit_vk_and_setup;
 
 #[test]
 fn test_two_proofs() {
-    let recursive_circuit = create_test_block_aggregation_circuit();
+    let (recursive_circuit, _aggregation_storage) = create_test_block_aggregation_circuit();
 
     let mut cs = TrivialAssembly::<
         Bn256,
