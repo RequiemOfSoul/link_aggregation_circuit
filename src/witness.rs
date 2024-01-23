@@ -257,6 +257,8 @@ pub struct RecursiveAggregationDataStorage<E: Engine> {
 pub struct BlockPublicInputData<E: Engine> {
     pub block_commitment: E::Fr,
     pub price_commitment: E::Fr,
+    pub prices_num: E::Fr,
+    pub prices_base_num: E::Fr,
 }
 
 impl<E: Engine> BlockPublicInputData<E> {
@@ -265,7 +267,12 @@ impl<E: Engine> BlockPublicInputData<E> {
         params: &P,
     ) -> E::Fr {
         GenericSponge::hash(
-            &[self.block_commitment, self.price_commitment],
+            &[
+                self.block_commitment,
+                self.price_commitment,
+                self.prices_num,
+                self.prices_base_num,
+            ],
             params,
             None,
         )[0]
