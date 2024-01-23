@@ -51,6 +51,8 @@ pub struct TestCircuit<E: Engine> {
     inner_circuit: BenchmarkCircuit<E>,
     block_commitments: E::Fr,
     price_commitments: E::Fr,
+    price_num: E::Fr,
+    price_base_sum: E::Fr,
 }
 
 impl<E: Engine> TestCircuit<E> {
@@ -59,6 +61,8 @@ impl<E: Engine> TestCircuit<E> {
             inner_circuit: circuit,
             block_commitments: <E as ScalarEngine>::Fr::one(),
             price_commitments: <E as ScalarEngine>::Fr::zero(),
+            price_num: <E as ScalarEngine>::Fr::zero(),
+            price_base_sum: <E as ScalarEngine>::Fr::zero(),
         }
     }
 }
@@ -70,7 +74,12 @@ impl<E: Engine> OldCircuit<E, OldActualParams> for TestCircuit<E> {
     ) -> Result<(), SynthesisError> {
         let params = PoseidonParams::<E, 2, 3>::default();
         // Set public input for test
-        cs.alloc_input(|| Ok(GenericSponge::hash(&[self.block_commitments, self.price_commitments], &params, None)[0]))?;
+        cs.alloc_input(|| Ok(GenericSponge::hash(&[
+            self.block_commitments,
+            self.price_commitments,
+            self.price_num,
+            self.price_base_sum,
+        ], &params, None)[0]))?;
         self.inner_circuit.synthesize(cs)
     }
 }
