@@ -65,13 +65,15 @@ impl<E: Engine> BlockAggregationOutputDataWitness<E> {
         public_input_data: &[BlockPublicInputData<E>],
         rns_params: &RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     ) -> Self {
-        let final_price_commitment = public_input_data
-            .iter()
-            .fold(E::Fr::zero(), |mut acc, el| {
-                acc.square();
-                acc.add_assign(&el.price_commitment);
-                acc
-            });
+        let mut accumulated_prices_num = E::Fr::zero();
+        let mut final_price_commitment = E::Fr::zero();
+        for data in public_input_data.iter() {
+            let mut offset = data.prices_base_sum;
+            offset.mul_assign(&accumulated_prices_num);
+            final_price_commitment.add_assign(&data.price_commitment);
+            final_price_commitment.add_assign(&offset);
+            accumulated_prices_num.add_assign(&data.prices_num); 
+        }
 
         use advanced_circuit_component::recursion::recursion_tree::NUM_LIMBS;
         let mut pair_with_generator = Vec::new();
@@ -258,7 +260,7 @@ pub struct BlockPublicInputData<E: Engine> {
     pub block_commitment: E::Fr,
     pub price_commitment: E::Fr,
     pub prices_num: E::Fr,
-    pub prices_base_num: E::Fr,
+    pub prices_base_sum: E::Fr,
 }
 
 impl<E: Engine> BlockPublicInputData<E> {
@@ -271,7 +273,7 @@ impl<E: Engine> BlockPublicInputData<E> {
                 self.block_commitment,
                 self.price_commitment,
                 self.prices_num,
-                self.prices_base_num,
+                self.prices_base_sum,
             ],
             params,
             None,

@@ -117,7 +117,7 @@ pub fn test_public_input_data(agg_block_num: usize) -> Vec<BlockPublicInputData<
         block_commitment: Fr::one(),
         price_commitment: Fr::zero(),
         prices_num: Fr::zero(),
-        prices_base_num: Fr::zero(),
+        prices_base_sum: Fr::zero(),
     };
     let all_block_test_data = vec![data; agg_block_num];
     all_block_test_data

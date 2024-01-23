@@ -113,11 +113,8 @@ where
         if let Some(vk_auth_paths) = self.vk_auth_paths.as_ref() {
             assert_eq!(self.num_proofs_to_check, vk_auth_paths.len());
         }
-        if let Some(block_commitments) = self.vk_auth_paths.as_ref() {
-            assert_eq!(self.num_proofs_to_check, block_commitments.len());
-        }
-        if let Some(price_commitments) = self.vk_auth_paths.as_ref() {
-            assert_eq!(self.num_proofs_to_check, price_commitments.len());
+        if let Some(public_input_data) = self.public_input_data.as_ref() {
+            assert_eq!(self.num_proofs_to_check, public_input_data.len());
         }
 
         // Allocate everything, get fs scalar for aggregation
@@ -289,23 +286,42 @@ where
         // check public input and compute final price commitment
         let mut final_price_commitment = Num::zero();
         let mut blocks_commitments = Vec::new();
+        let mut accumulated_prices_num = Num::zero();
         for idx in 0..self.num_proofs_to_check {
-            let block_commitment = self
-                .public_input_data
-                .as_ref()
-                .map(|el| el[idx].block_commitment);
-            let price_commitment = self
-                .public_input_data
-                .as_ref()
-                .map(|el| el[idx].price_commitment);
-            let allocated_block_commitment =
-                Num::Variable(AllocatedNum::alloc(cs, || Ok(*block_commitment.get()?))?);
-            let allocated_price_commitment =
-                Num::Variable(AllocatedNum::alloc(cs, || Ok(*price_commitment.get()?))?);
+            let allocated_block_commitment = {
+                let value = self
+                    .public_input_data
+                    .as_ref()
+                    .map(|el| el[idx].block_commitment);
+                Num::Variable(AllocatedNum::alloc(cs, || Ok(*value.get()?))?)
+            };
+            let allocated_price_commitment = {
+                let value = self
+                    .public_input_data
+                    .as_ref()
+                    .map(|el| el[idx].price_commitment);
+                Num::Variable(AllocatedNum::alloc(cs, || Ok(*value.get()?))?)
+            };
+            let allocated_prices_base_sum = {
+                let value = self
+                    .public_input_data
+                    .as_ref()
+                    .map(|el| el[idx].prices_base_sum);
+                Num::Variable(AllocatedNum::alloc(cs, || Ok(*value.get()?))?)
+            };
+            let allocated_prices_num = {
+                let value = self.public_input_data.as_ref().map(|el| el[idx].prices_num);
+                Num::Variable(AllocatedNum::alloc(cs, || Ok(*value.get()?))?)
+            };
 
             let commitment = CircuitGenericSponge::hash_num(
                 cs,
-                &[allocated_block_commitment, allocated_price_commitment],
+                &[
+                    allocated_block_commitment,
+                    allocated_price_commitment,
+                    allocated_prices_num,
+                    allocated_prices_base_sum,
+                ],
                 self.poseidon_params,
                 None,
             )?[0]
@@ -314,9 +330,14 @@ where
             expected_input.enforce_equal(cs, &commitment)?;
 
             blocks_commitments.push(allocated_block_commitment);
+
             // Compute final price commitment
-            let square = final_price_commitment.mul(cs, &final_price_commitment)?;
-            final_price_commitment = square.add(cs, &allocated_price_commitment)?;
+            final_price_commitment = {
+                let offset = allocated_prices_base_sum.mul(cs, &accumulated_prices_num)?;
+                let append = allocated_price_commitment.add(cs, &offset)?;
+                final_price_commitment.add(cs, &append)?
+            };
+            accumulated_prices_num = accumulated_prices_num.add(cs, &allocated_prices_num)?;
         }
         // allocate vk ids
 
