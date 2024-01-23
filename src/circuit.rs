@@ -27,9 +27,10 @@ use advanced_circuit_component::recursion::node_aggregation::NodeAggregationOutp
 use advanced_circuit_component::recursion::RANGE_CHECK_TABLE_BIT_WIDTH;
 use advanced_circuit_component::recursion::recursion_tree::NUM_LIMBS;
 use advanced_circuit_component::recursion::transcript::TranscriptGadget;
-use advanced_circuit_component::rescue_poseidon::{CircuitGenericSponge, PoseidonParams};
+use advanced_circuit_component::rescue_poseidon::CircuitGenericSponge;
 use advanced_circuit_component::traits::GenericHasher;
 use advanced_circuit_component::vm::tables::BitwiseLogicTable;
+use crate::DefaultPoseidonParams;
 
 use crate::witness::{BlockAggregationOutputData, BlockPublicInputData, DefaultRescueParams};
 
@@ -54,6 +55,7 @@ pub struct RecursiveAggregationCircuit<
     pub proof_ids: Option<Vec<usize>>,
     pub proofs: Option<Vec<Proof<E, P>>>,
     pub rescue_params: &'a DefaultRescueParams<E>,
+    pub poseidon_params: &'a DefaultPoseidonParams<E>,
     pub rns_params: &'a RnsParameters<E, <E::G1Affine as CurveAffine>::Base>,
     pub aux_data: AD,
     pub transcript_params: &'a T::Params,
@@ -287,7 +289,6 @@ where
         // check public input and compute final price commitment
         let mut final_price_commitment = Num::zero();
         let mut blocks_commitments = Vec::new();
-        let params = PoseidonParams::<E, 2, 3>::default();
         for idx in 0..self.num_proofs_to_check {
             let block_commitment = self
                 .public_input_data
@@ -305,7 +306,7 @@ where
             let commitment = CircuitGenericSponge::hash_num(
                 cs,
                 &[allocated_block_commitment, allocated_price_commitment],
-                &params,
+                self.poseidon_params,
                 None,
             )?[0]
                 .get_variable();
@@ -382,11 +383,11 @@ where
                 pair_with_generator_y: pair_with_generator[NUM_LIMBS..].iter().copied().map(Num::Variable).collect::<Vec<_>>().try_into().unwrap(),
             },
         };
-        let commit_function = GenericHasher::new_from_params(&params);
+        let commit_function = GenericHasher::new_from_params(self.poseidon_params);
         let input_commitment = commit_variable_length_encodable_item(cs, &block_aggregation_data, &commit_function)?;
         let expected_input_commitment = AllocatedNum::alloc(cs, || Ok(self.input_commitment.unwrap()))?;
         expected_input_commitment.enforce_equal(cs, &input_commitment.get_variable())?;
-        input_commitment.get_variable().inputize(cs)?;
+        expected_input_commitment.inputize(cs)?;
 
         input_commitment.into_be_bytes(cs)?; // only use lookup and generate commitment for final aggregation
 

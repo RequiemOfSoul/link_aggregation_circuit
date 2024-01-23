@@ -17,7 +17,7 @@ use crate::bellman::worker::Worker;
 use crate::{BlockPublicInputData, RecursiveAggregationCircuitBn256, RecursiveAggregationDataStorage, RescueTranscriptForRecursion, RescueTranscriptGadgetForRecursion};
 use crate::bellman::plonk::fft::cooley_tukey_ntt::{BitReversedOmegas, CTPrecomputations, OmegasInvBitreversed};
 use crate::circuit::RecursiveAggregationCircuit;
-use crate::vks_tree::{make_vks_tree, RESCUE_PARAMETERS, RNS_PARAMETERS};
+use crate::vks_tree::{make_vks_tree, POSEIDON_PARAMETERS, RESCUE_PARAMETERS, RNS_PARAMETERS};
 
 pub struct TestCircuitWithOneInput<E: Engine> {
     inner_circuit: BenchmarkCircuitWithOneInput<E>,
@@ -226,6 +226,7 @@ pub fn create_test_block_aggregation_circuit() -> (RecursiveAggregationCircuitBn
         proof_ids: Some(proof_ids),
         proofs: Some(proofs),
         rescue_params: &*RESCUE_PARAMETERS,
+        poseidon_params: &POSEIDON_PARAMETERS,
         rns_params: &*RNS_PARAMETERS,
         aux_data,
         transcript_params: &*RESCUE_PARAMETERS,
