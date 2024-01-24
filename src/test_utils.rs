@@ -51,6 +51,8 @@ pub struct TestCircuit<E: Engine> {
     inner_circuit: BenchmarkCircuit<E>,
     block_commitments: E::Fr,
     price_commitments: E::Fr,
+    price_num: E::Fr,
+    price_base_sum: E::Fr,
 }
 
 impl<E: Engine> TestCircuit<E> {
@@ -59,6 +61,8 @@ impl<E: Engine> TestCircuit<E> {
             inner_circuit: circuit,
             block_commitments: <E as ScalarEngine>::Fr::one(),
             price_commitments: <E as ScalarEngine>::Fr::zero(),
+            price_num: <E as ScalarEngine>::Fr::zero(),
+            price_base_sum: <E as ScalarEngine>::Fr::zero(),
         }
     }
 }
@@ -70,7 +74,12 @@ impl<E: Engine> OldCircuit<E, OldActualParams> for TestCircuit<E> {
     ) -> Result<(), SynthesisError> {
         let params = PoseidonParams::<E, 2, 3>::default();
         // Set public input for test
-        cs.alloc_input(|| Ok(GenericSponge::hash(&[self.block_commitments, self.price_commitments], &params, None)[0]))?;
+        cs.alloc_input(|| Ok(GenericSponge::hash(&[
+            self.block_commitments,
+            self.price_commitments,
+            self.price_num,
+            self.price_base_sum,
+        ], &params, None)[0]))?;
         self.inner_circuit.synthesize(cs)
     }
 }
@@ -112,18 +121,15 @@ pub fn make_vk_and_proof_for_crs<E: Engine, T: Transcript<E::Fr>>(
     (verification_key, proof)
 }
 
-pub fn test_public_input_data(agg_block_num: usize) -> (Vec<BlockPublicInputData<Bn256>>, Fr) {
+pub fn test_public_input_data(agg_block_num: usize) -> Vec<BlockPublicInputData<Bn256>>{
     let data = BlockPublicInputData {
         block_commitment: Fr::one(),
         price_commitment: Fr::zero(),
+        prices_num: Fr::zero(),
+        prices_base_sum: Fr::zero(),
     };
     let all_block_test_data = vec![data; agg_block_num];
-    let acc_price_commitment = all_block_test_data.iter().fold(Fr::zero(), |mut acc, el| {
-        acc.square();
-        acc.add_assign(&el.price_commitment);
-        acc
-    });
-    (all_block_test_data, acc_price_commitment)
+    all_block_test_data
 }
 
 pub fn create_test_block_aggregation_circuit() -> (RecursiveAggregationCircuitBn256<'static>, RecursiveAggregationDataStorage<Bn256>) {
@@ -199,7 +205,7 @@ pub fn create_test_block_aggregation_circuit() -> (RecursiveAggregationCircuitBn
     let proofs = vec![proof_0];
     let vks = vec![vk_0];
 
-    let (block_input_data, _final_price_commitment) = test_public_input_data(1);
+    let block_input_data = test_public_input_data(1);
     let storage = crate::create_zklink_recursive_aggregate(
         1,
         1,

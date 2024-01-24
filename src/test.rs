@@ -96,7 +96,7 @@ fn simulate_zklink_proofs() {
 
     let proofs_to_check = vec![2, 3];
     let proofs = vec![proofs[2].clone(), proofs[3].clone()];
-    let (block_input_data, _final_price_commitment) = test_public_input_data(num_proofs_to_check);
+    let block_input_data = test_public_input_data(num_proofs_to_check);
 
     let worker = Worker::new();
 
@@ -263,7 +263,7 @@ fn simulate_many_proofs() {
     let worker = Worker::new();
 
     println!("Creating proof");
-    let (block_input_data, _final_price_commitment) = test_public_input_data(num_proofs_to_check);
+    let block_input_data = test_public_input_data(num_proofs_to_check);
     let _ = proof_recursive_aggregate_for_zklink(
         tree_depth,
         num_inputs,
@@ -363,8 +363,7 @@ fn test_all_aggregated_proofs() {
             "Creating [proofs_num:{}, crs_degree:{}] proof",
             aggregated_proofs_num, crs_degree
         );
-        let (block_input_data, _final_price_commitment) =
-            test_public_input_data(aggregated_proofs_num);
+        let block_input_data = test_public_input_data(aggregated_proofs_num);
         let _ = proof_recursive_aggregate_for_zklink(
             TREE_DEPTH,
             num_inputs,
